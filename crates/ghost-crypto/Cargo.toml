@@ -1,0 +1,15 @@
+[package]
+name = "ghost-crypto"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cryptographic primitives and Noise Protocol handshakes for GhostMesh"
+
+[dependencies]
+ghost-protocol = { path = "../ghost-protocol" }
+snow = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+bytes = { workspace = true }

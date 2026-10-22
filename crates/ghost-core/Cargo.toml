@@ -1,0 +1,16 @@
+[package]
+name = "ghost-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Peer state machine, routing table and async event engine for GhostMesh"
+
+[dependencies]
+ghost-protocol = { path = "../ghost-protocol" }
+ghost-crypto = { path = "../ghost-crypto" }
+ghost-nat = { path = "../ghost-nat" }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }

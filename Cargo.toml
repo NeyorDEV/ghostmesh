@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ghost-protocol",
+    "crates/ghost-crypto",
+    "crates/ghost-nat",
+    "crates/ghost-core",
+    "crates/ghost-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["NeyorDEV <mylan.perrier@etu.uca.fr>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/NeyorDEV/ghostmesh"
+readme = "README.md"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+thiserror = "1"
+anyhow = "1"
+bytes = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+rand = "0.8"
+clap = { version = "4", features = ["derive"] }
+snow = "0.9"
+hex = "0.4"

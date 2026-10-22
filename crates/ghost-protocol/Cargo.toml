@@ -1,0 +1,15 @@
+[package]
+name = "ghost-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Binary wire format and packet codecs for GhostMesh"
+
+[dependencies]
+bytes = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+

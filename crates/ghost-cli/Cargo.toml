@@ -1,0 +1,19 @@
+[package]
+name = "ghost-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "GhostMesh CLI client"
+
+[dependencies]
+ghost-protocol = { path = "../ghost-protocol" }
+ghost-crypto = { path = "../ghost-crypto" }
+ghost-nat = { path = "../ghost-nat" }
+ghost-core = { path = "../ghost-core" }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+hex = { workspace = true }

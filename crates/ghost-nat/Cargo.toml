@@ -1,0 +1,13 @@
+[package]
+name = "ghost-nat"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "STUN resolution and UDP NAT traversal for GhostMesh"
+
+[dependencies]
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
