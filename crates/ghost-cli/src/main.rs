@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use ghost_core::MeshEngine;
 use ghost_crypto::IdentityKeypair;
 use ghost_nat::DEFAULT_STUN_SERVER;
-use ghost_protocol::{NodeId, PacketType};
+use ghost_protocol::{InviteTicket, NodeId, PacketType};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,6 +29,20 @@ enum Commands {
         port: u16,
         #[arg(short, long, default_value = DEFAULT_STUN_SERVER)]
         stun: String,
+    },
+
+    /// Generate an invitation ticket and wait for incoming P2P connection
+    Invite {
+        #[arg(short, long, default_value_t = 4242)]
+        port: u16,
+    },
+
+    /// Join a remote peer using an invitation ticket (UDP hole punching)
+    Join {
+        /// The invite ticket string starting with gm1_
+        ticket: String,
+        #[arg(short, long, default_value_t = 0)]
+        port: u16,
     },
 
     /// Run the GhostMesh node engine
@@ -80,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
                 Ok(public_endpoint) => {
                     println!("\n✅ NAT Traversal Discovery Success");
                     println!("──────────────────────────────────────────────");
-                    println!("Local Socket  : {local_addr}");
+                    println!("Local Socket   : {local_addr}");
                     println!("Public Endpoint: {public_endpoint}");
                     println!("──────────────────────────────────────────────");
                 }
@@ -88,6 +102,57 @@ async fn main() -> anyhow::Result<()> {
                     error!("STUN discovery failed: {e}");
                 }
             }
+        }
+
+        Commands::Invite { port } => {
+            let engine = Arc::new(MeshEngine::bind(port).await?);
+            let ticket = engine.create_invite();
+            let ticket_str = ticket.to_ticket_string();
+
+            println!("\n👻 GhostMesh Invitation Ready");
+            println!("────────────────────────────────────────────────────────────────────────────");
+            println!("Node ID        : {}", engine.node_id());
+            println!("Public Endpoint: {}", engine.public_addr);
+            println!("\n📋 Share this ticket with your peer:");
+            println!("\x1b[1;36m{}\x1b[0m", ticket_str);
+            println!("────────────────────────────────────────────────────────────────────────────");
+            println!("Run the following command on the other machine to connect:");
+            println!("  ghostmesh join {}", ticket_str);
+            println!("\nListening for incoming direct P2P connection... (Ctrl+C to quit)\n");
+
+            let engine_clone = Arc::clone(&engine);
+            tokio::spawn(async move {
+                engine_clone.run_receive_loop().await;
+            });
+
+            engine.start_background_tasks().await;
+            tokio::signal::ctrl_c().await?;
+            info!("Shutting down invite listener.");
+        }
+
+        Commands::Join { ticket, port } => {
+            let parsed_ticket: InviteTicket = ticket.parse()
+                .map_err(|e| anyhow::anyhow!("Invalid invite ticket: {e}"))?;
+
+            println!("\n👻 Connecting to GhostMesh Peer...");
+            println!("────────────────────────────────────────────────────────────────────────────");
+            println!("Target Node ID : {}", parsed_ticket.node_id);
+            println!("Target Endpoint: {}", parsed_ticket.endpoint);
+            println!("────────────────────────────────────────────────────────────────────────────");
+
+            let engine = Arc::new(MeshEngine::bind(port).await?);
+            let engine_recv = Arc::clone(&engine);
+            tokio::spawn(async move {
+                engine_recv.run_receive_loop().await;
+            });
+
+            engine.start_background_tasks().await;
+            engine.join_ticket(parsed_ticket).await?;
+
+            println!("🚀 UDP hole-punching probes dispatched. Direct tunnel negotiation active.\n");
+
+            tokio::signal::ctrl_c().await?;
+            info!("Exiting GhostMesh.");
         }
 
         Commands::Up { port } => {
@@ -106,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
                 engine_clone.run_receive_loop().await;
             });
 
+            engine.start_background_tasks().await;
             tokio::signal::ctrl_c().await?;
             info!("Shutting down GhostMesh node.");
         }

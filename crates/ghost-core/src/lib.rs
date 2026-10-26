@@ -4,7 +4,7 @@ pub use peer::{Peer, PeerState, PeerTable};
 
 use ghost_crypto::IdentityKeypair;
 use ghost_nat::DEFAULT_STUN_SERVER;
-use ghost_protocol::{NodeId, Packet, PacketType};
+use ghost_protocol::{InviteTicket, NodeId, Packet, PacketType};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -71,10 +71,52 @@ impl MeshEngine {
         self.identity.node_id()
     }
 
+    pub fn create_invite(&self) -> InviteTicket {
+        InviteTicket::new(self.node_id(), self.public_addr, self.identity.public)
+    }
+
     pub async fn add_peer(&self, node_id: NodeId, endpoint: SocketAddr) {
         let mut table = self.peers.write().await;
         table.insert(Peer::new(node_id, endpoint));
         info!("Added peer {node_id} at {endpoint}");
+    }
+
+    pub async fn join_ticket(self: &Arc<Self>, ticket: InviteTicket) -> Result<(), EngineError> {
+        let peer = Peer::new(ticket.node_id, ticket.endpoint)
+            .with_public_key(ticket.public_key);
+        {
+            let mut table = self.peers.write().await;
+            table.insert(peer);
+        }
+
+        info!("Starting UDP hole-punching towards {} (NodeId: {})...", ticket.endpoint, ticket.node_id);
+
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut attempts = 0;
+            while attempts < 20 {
+                // Check if already connected
+                let is_connected = {
+                    let table = engine.peers.read().await;
+                    table.get(&ticket.node_id).map(|p| p.state == PeerState::Connected).unwrap_or(false)
+                };
+
+                if is_connected {
+                    info!("Hole punching complete, peer {} is connected!", ticket.node_id);
+                    break;
+                }
+
+                // Send HandshakeInit probe
+                let _ = engine
+                    .send_packet(ticket.node_id, PacketType::HandshakeInit, engine.identity.public.as_slice())
+                    .await;
+
+                attempts += 1;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        });
+
+        Ok(())
     }
 
     pub async fn send_packet(
@@ -105,6 +147,28 @@ impl MeshEngine {
         Ok(())
     }
 
+    pub async fn start_background_tasks(self: &Arc<Self>) {
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                interval.tick().await;
+                let peers_to_ping: Vec<(NodeId, SocketAddr)> = {
+                    let table = engine.peers.read().await;
+                    table
+                        .iter()
+                        .filter(|p| p.state == PeerState::Connected)
+                        .map(|p| (p.node_id, p.endpoint))
+                        .collect()
+                };
+
+                for (node_id, _) in peers_to_ping {
+                    let _ = engine.send_packet(node_id, PacketType::KeepAlive, b"PING").await;
+                }
+            }
+        });
+    }
+
     pub async fn run_receive_loop(self: Arc<Self>) {
         let mut buf = [0u8; 65535];
         loop {
@@ -113,15 +177,62 @@ impl MeshEngine {
                     let raw = &buf[..len];
                     match Packet::decode(raw) {
                         Ok(packet) => {
-                            info!(
-                                "Received packet {:?} from {} (NodeId: {})",
-                                packet.packet_type, remote_addr, packet.src_node
-                            );
-                            // Update or discover peer
                             let mut table = self.peers.write().await;
-                            if let Some(peer) = table.get_mut(&packet.src_node) {
-                                peer.endpoint = remote_addr;
-                                peer.state = PeerState::Connected;
+                            match packet.packet_type {
+                                PacketType::HandshakeInit => {
+                                    info!(
+                                        "⚡ Received HandshakeInit from {} at {}",
+                                        packet.src_node, remote_addr
+                                    );
+                                    let peer = table.get_mut(&packet.src_node);
+                                    if let Some(p) = peer {
+                                        p.endpoint = remote_addr;
+                                        p.state = PeerState::Connected;
+                                        p.last_seen = std::time::Instant::now();
+                                    } else {
+                                        let mut new_peer = Peer::new(packet.src_node, remote_addr);
+                                        new_peer.state = PeerState::Connected;
+                                        table.insert(new_peer);
+                                    }
+
+                                    drop(table);
+                                    // Reply with HandshakeResp
+                                    let _ = self
+                                        .send_packet(
+                                            packet.src_node,
+                                            PacketType::HandshakeResp,
+                                            self.identity.public.as_slice(),
+                                        )
+                                        .await;
+                                }
+
+                                PacketType::HandshakeResp => {
+                                    info!(
+                                        "🎉 Received HandshakeResp from {} at {}! Direct connection established.",
+                                        packet.src_node, remote_addr
+                                    );
+                                    if let Some(p) = table.get_mut(&packet.src_node) {
+                                        p.endpoint = remote_addr;
+                                        p.state = PeerState::Connected;
+                                        p.last_seen = std::time::Instant::now();
+                                    }
+                                }
+
+                                PacketType::KeepAlive => {
+                                    if let Some(p) = table.get_mut(&packet.src_node) {
+                                        p.last_seen = std::time::Instant::now();
+                                    }
+                                }
+
+                                PacketType::Data => {
+                                    info!(
+                                        "📦 Received Data ({} bytes) from {}",
+                                        packet.payload.len(),
+                                        packet.src_node
+                                    );
+                                }
+
+                                PacketType::StunProbe => {}
                             }
                         }
                         Err(e) => {

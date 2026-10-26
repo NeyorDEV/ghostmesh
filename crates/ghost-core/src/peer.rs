@@ -6,15 +6,27 @@ use std::time::Instant;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeerState {
     Disconnected,
-    Handshaking,
+    Punching,
     Connected,
     Relayed,
+}
+
+impl std::fmt::Display for PeerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disconnected => write!(f, "Disconnected"),
+            Self::Punching => write!(f, "Punching NAT"),
+            Self::Connected => write!(f, "Connected (Direct P2P)"),
+            Self::Relayed => write!(f, "Relayed"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Peer {
     pub node_id: NodeId,
     pub endpoint: SocketAddr,
+    pub public_key: Option<[u8; 32]>,
     pub state: PeerState,
     pub last_seen: Instant,
     pub rtt_ms: Option<u32>,
@@ -25,10 +37,16 @@ impl Peer {
         Self {
             node_id,
             endpoint,
+            public_key: None,
             state: PeerState::Disconnected,
             last_seen: Instant::now(),
             rtt_ms: None,
         }
+    }
+
+    pub fn with_public_key(mut self, key: [u8; 32]) -> Self {
+        self.public_key = Some(key);
+        self
     }
 }
 

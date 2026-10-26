@@ -28,3 +28,6 @@ rand = "0.8"
 clap = { version = "4", features = ["derive"] }
 snow = "0.9"
 hex = "0.4"
+base64 = "0.22"
+serde_json = "1.0"
+
