@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GhostMesh Documentation | Decentralized P2P Mesh Overlay</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,11 +16,13 @@
     <div class="nav-brand">
       <div class="logo-icon"></div>
       <span>GhostMesh</span>
+      <span style="font-size: 11px; padding: 2px 8px; border-radius: 9999px; background: rgba(6, 182, 212, 0.15); color: #06b6d4; font-weight: 600;">v0.1.2</span>
     </div>
     <nav class="nav-links">
       <a href="#quick-start">Quick Start</a>
       <a href="#architecture">Architecture</a>
       <a href="#downloads">Downloads</a>
+      <a href="#troubleshooting">Troubleshooting</a>
       <a href="https://github.com/NeyorDEV/ghostmesh" target="_blank" class="btn-github">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
         GitHub
@@ -44,6 +47,7 @@
       <div class="sidebar-group">
         <div class="sidebar-title">Core Architecture</div>
         <ul class="sidebar-menu">
+          <li><a href="#architecture">Architecture Overview</a></li>
           <li><a href="#wire-format">Wire Format & Protocols</a></li>
           <li><a href="#cryptography">Noise Protocol (Curve25519)</a></li>
           <li><a href="#nat-traversal">STUN & Hole Punching</a></li>
@@ -52,10 +56,11 @@
       </div>
 
       <div class="sidebar-group">
-        <div class="sidebar-title">Reference</div>
+        <div class="sidebar-title">Reference & Guides</div>
         <ul class="sidebar-menu">
+          <li><a href="#gui-dashboard">Desktop Dashboard (GUI)</a></li>
           <li><a href="#cli-reference">CLI Reference</a></li>
-          <li><a href="#gui-dashboard">Desktop Dashboard</a></li>
+          <li><a href="#troubleshooting">Firewalls & Troubleshooting</a></li>
         </ul>
       </div>
     </aside>
@@ -67,35 +72,6 @@
         <span class="hero-tag">Decentralized Mesh VPN</span>
         <h1>GhostMesh Documentation</h1>
         <p>GhostMesh is a zero-configuration, peer-to-peer encrypted mesh overlay network built with Rust and Tauri v2. It connects your devices directly over UDP across domestic NATs and firewalls without relying on any centralized data relay servers.</p>
-      </section>
-
-      <!-- Downloads -->
-      <section class="doc-section" id="downloads">
-        <h2>Downloads</h2>
-        <p>Pre-compiled standalone binaries for 64-bit Windows are available from the GitHub Releases:</p>
-
-        <div class="download-grid">
-          <div class="download-card">
-            <div>
-              <h4>Desktop GUI Dashboard</h4>
-              <p>Standalone Windows executable with dark glassmorphism dashboard and system tray companion.</p>
-            </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.2/ghostmesh-desktop-v0.1.2-windows-x64.zip" class="btn-download">
-              Download Desktop GUI (v0.1.2)
-            </a>
-          </div>
-
-          <div class="download-card">
-            <div>
-              <h4>CLI Binary</h4>
-              <p>Lightweight command-line interface for servers, headless machines, and automation.</p>
-            </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.1/ghostmesh-cli-v0.1.1-windows-x64.zip" class="btn-download">
-              Download CLI Binary (1.3 MB)
-            </a>
-
-          </div>
-        </div>
       </section>
 
       <!-- Quick Start -->
@@ -123,9 +99,57 @@ cargo run -p ghost-cli -- invite
 cargo run -p ghostmesh-gui</code></pre>
       </section>
 
+      <!-- Downloads -->
+      <section class="doc-section" id="downloads">
+        <h2>Downloads</h2>
+        <p>Pre-compiled standalone binaries for 64-bit Windows are available from the GitHub Releases:</p>
+
+        <div class="download-grid">
+          <div class="download-card">
+            <div>
+              <h4>Desktop GUI Dashboard</h4>
+              <p>Standalone Windows executable with dark glassmorphism dashboard, system tray companion, and real-time latency monitor.</p>
+            </div>
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.2/ghostmesh-desktop-v0.1.2-windows-x64.zip" class="btn-download">
+              Download Desktop GUI (v0.1.2)
+            </a>
+          </div>
+
+          <div class="download-card">
+            <div>
+              <h4>CLI Binary</h4>
+              <p>Lightweight command-line interface for servers, headless Linux/Windows machines, and automation.</p>
+            </div>
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.1/ghostmesh-cli-v0.1.1-windows-x64.zip" class="btn-download">
+              Download CLI Binary (1.3 MB)
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- npm Package -->
+      <section class="doc-section" id="npm">
+        <h2>npm / npx Package</h2>
+        <p>The official npm package <code>ghostmesh-cli</code> provides an instant cross-platform wrapper to execute GhostMesh commands anywhere Node.js is installed:</p>
+        <pre><code># Check version
+npx ghostmesh-cli --version
+
+# Display help
+npx ghostmesh-cli --help
+
+# Generate a fresh cryptographic identity
+npx ghostmesh-cli keygen
+
+# Discover your public STUN endpoint
+npx ghostmesh-cli discover</code></pre>
+        <div class="callout">
+          <p><strong>Package Registry:</strong> Published on npm as <a href="https://www.npmjs.com/package/ghostmesh-cli" target="_blank">ghostmesh-cli</a> under the <code>@neyordev</code> namespace.</p>
+        </div>
+      </section>
+
       <!-- Core Architecture -->
       <section class="doc-section" id="architecture">
-        <h2>Core Architecture</h2>
+        <h2>Architecture Overview</h2>
 
         <div class="callout">
           <p><strong>Zero Central Relay Principle:</strong> Unlike traditional VPNs (where all traffic flows through a single centralized server bottleneck), GhostMesh only uses public STUN servers for discovery. All actual data frames travel directly point-to-point.</p>
@@ -161,6 +185,18 @@ cargo run -p ghostmesh-gui</code></pre>
         <p>GhostMesh instantiates a virtual Layer 3 network interface (<code>ghost0</code>) powered by Wintun on Windows. It assigns an IP address in the private mesh subnet (<code>10.42.0.0/16</code>), allowing system tools like <code>ping</code>, SSH, and file transfers to traverse the P2P mesh as if connected over a local LAN.</p>
       </section>
 
+      <!-- Desktop GUI Dashboard -->
+      <section class="doc-section" id="gui-dashboard">
+        <h2>Desktop Dashboard (GUI)</h2>
+        <p>The desktop application provides a modern dark glassmorphism dashboard built with Tauri v2 and native Rust bindings:</p>
+        <ul>
+          <li><strong>Live Status Indicators:</strong> Real-time display of local virtual IP (<code>10.42.X.Y/16</code>), public STUN endpoint, and cryptographic Node ID.</li>
+          <li><strong>One-Click Invite Generator:</strong> Create encrypted base64 <code>gm1_...</code> invitation tickets containing your Curve25519 public key and reflexive UDP endpoint.</li>
+          <li><strong>Active Mesh Links Table:</strong> View active peer endpoints, real-time RTT round-trip latency, and connection states (Connected / Disconnected).</li>
+          <li><strong>System Tray Minimization:</strong> Closes cleanly to the Windows system tray and runs silently in the background without terminal prompts.</li>
+        </ul>
+      </section>
+
       <!-- CLI Reference -->
       <section class="doc-section" id="cli-reference">
         <h2>CLI Reference</h2>
@@ -170,7 +206,60 @@ ghostmesh invite [--port 4242] [--ip 10.42.0.1] # Generate ticket and wait for p
 ghostmesh join &lt;ticket&gt; [--ip 10.42.0.2]       # Join peer and negotiate UDP hole-punching
 ghostmesh up [--port 4242] [--ip 10.42.0.1]    # Run standalone background node</code></pre>
       </section>
+
+      <!-- Firewalls & Troubleshooting -->
+      <section class="doc-section" id="troubleshooting">
+        <h2>Firewalls & Troubleshooting</h2>
+        <p>P2P direct connections rely on UDP traversal. If your nodes fail to connect, review the typical scenarios below:</p>
+
+        <div class="callout" style="border-left-color: #f59e0b; background: rgba(245, 158, 11, 0.08);">
+          <p><strong>Corporate / Work Firewalls (STUN <code>0.0.0.0:4242</code>):</strong> If your node shows <code>0.0.0.0:4242</code>, your local corporate or campus network blocks outbound UDP traffic or STUN discovery. Pure P2P requires UDP communication.</p>
+        </div>
+
+        <h3>1. Connecting Home to Work</h3>
+        <ul>
+          <li><strong>Work / University Firewalls:</strong> Most enterprise firewalls strictly drop unsolicited or arbitrary outbound UDP packets. To test from work, switch your machine to a mobile 4G/5G Wi-Fi hotspot where UDP and STUN are unrestricted.</li>
+          <li><strong>Residential Router Port Forwarding:</strong> At home, routers (Freebox, Livebox, SFR, Bouygues) drop unexpected inbound UDP. You can forward UDP port <code>4242</code> directly to your home PC's local IP in your box admin panel (<code>192.168.1.1</code>).</li>
+        </ul>
+
+        <h3>2. NAT Types & Symmetric NAT</h3>
+        <p>UDP hole-punching succeeds with Cone NATs (Full Cone, Restricted Cone, Port-Restricted Cone). When a network uses <strong>Symmetric NAT</strong> (common in enterprise networks), external ports change randomly for each destination. For symmetric networks, a relay fallback (DERP / TURN) or port forwarding is required.</p>
+      </section>
     </main>
   </div>
+
+  <!-- JavaScript: Sidebar active link spy & smooth scroll handler -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const menuLinks = document.querySelectorAll('.sidebar-menu a');
+      const sections = document.querySelectorAll('.content section[id], .content h3[id]');
+
+      // Click handler
+      menuLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+          menuLinks.forEach(l => l.classList.remove('active'));
+          link.classList.add('active');
+        });
+      });
+
+      // Scroll spy using IntersectionObserver
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const id = entry.target.getAttribute('id');
+            const targetLink = document.querySelector(`.sidebar-menu a[href="#${id}"]`);
+            if (targetLink) {
+              menuLinks.forEach(l => l.classList.remove('active'));
+              targetLink.classList.add('active');
+            }
+          }
+        });
+      }, {
+        rootMargin: '-20% 0px -70% 0px'
+      });
+
+      sections.forEach(sec => observer.observe(sec));
+    });
+  </script>
 </body>
 </html>

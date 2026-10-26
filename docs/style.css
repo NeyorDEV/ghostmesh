@@ -14,6 +14,10 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -61,11 +65,10 @@ a:hover {
 }
 
 .logo-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #38bdf8, #0284c7);
-  box-shadow: 0 0 12px var(--accent-glow);
+  width: 28px;
+  height: 28px;
+  background: url('icon.svg') no-repeat center center / contain;
+  filter: drop-shadow(0 0 8px var(--accent-glow));
 }
 
 .nav-links {
@@ -197,9 +200,14 @@ a:hover {
 }
 
 /* Sections */
+.doc-section,
+h3[id],
+section[id] {
+  scroll-margin-top: 80px;
+}
+
 .doc-section {
   margin-bottom: 48px;
-  scroll-margin-top: 80px;
 }
 
 .doc-section h2 {
