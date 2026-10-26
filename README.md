@@ -1,4 +1,4 @@
-# 👻 GhostMesh
+# GhostMesh
 
 > **Decentralized, zero-config, peer-to-peer encrypted mesh overlay network.**
 
@@ -6,7 +6,7 @@ GhostMesh connects your devices directly over UDP without relying on centralized
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 - **Direct P2P Connectivity:** Traverses domestic NATs and firewalls via automated UDP hole punching.
 - **End-to-End Cryptography:** Noise Protocol handshake (`Noise_XX` / `Curve25519` + `ChaCha20-Poly1305` + `BLAKE2s`).
@@ -16,7 +16,7 @@ GhostMesh connects your devices directly over UDP without relying on centralized
 
 ---
 
-## 🏗️ Architecture (Cargo Workspace)
+## Architecture (Cargo Workspace)
 
 ```text
 ghostmesh/
@@ -25,12 +25,12 @@ ghostmesh/
 │   ├── ghost-crypto/     # Noise protocol state machine, key generation & frame encryption
 │   ├── ghost-nat/        # Lightweight STUN client & UDP hole-punching probes
 │   ├── ghost-core/       # Routing table, peer state machine, event loop
-│   └── ghost-cli/        # CLI binary (ghostmesh keygen, up, peer add, status)
+│   └── ghost-cli/        # CLI binary (ghostmesh keygen, invite, join, discover, up)
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Build the project
 ```bash
@@ -42,7 +42,19 @@ cargo build --release
 cargo run -p ghost-cli -- keygen
 ```
 
+### 3. Connect two machines via direct P2P
+
+**On Machine A (Host):**
+```bash
+cargo run -p ghost-cli -- invite
+```
+
+**On Machine B (Guest):**
+```bash
+cargo run -p ghost-cli -- join <ticket>
+```
+
 ---
 
-## 📜 License
+## License
 Licensed under [MIT OR Apache-2.0](LICENSE).
