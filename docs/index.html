@@ -61,6 +61,8 @@
         <div class="sidebar-title">Reference & Guides</div>
         <ul class="sidebar-menu">
           <li><a href="#gui-dashboard">Desktop Dashboard (GUI)</a></li>
+          <li><a href="#known-devices">Known Devices & Consent Flow</a></li>
+          <li><a href="#remote-desktop">Windows Remote Desktop (RDP)</a></li>
           <li><a href="#qr-pairing">QR Code Instant Pairing</a></li>
           <li><a href="#ghostdrop">GhostDrop (P2P File Transfer)</a></li>
           <li><a href="#ghostsync">GhostSync (Folder Sync)</a></li>
@@ -115,8 +117,8 @@ cargo run -p ghostmesh-gui</code></pre>
               <h4>Desktop GUI Dashboard</h4>
               <p>Standalone Windows executable with dark glassmorphism dashboard, system tray companion, and real-time latency monitor.</p>
             </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.0/ghostmesh-desktop-v0.2.0-windows-x64.zip" class="btn-download">
-              Download Desktop GUI (v0.2.0)
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.1/ghostmesh-desktop-v0.2.1-windows-x64.zip" class="btn-download">
+              Download Desktop GUI (v0.2.1)
             </a>
           </div>
 
@@ -125,8 +127,8 @@ cargo run -p ghostmesh-gui</code></pre>
               <h4>CLI Binary</h4>
               <p>Lightweight command-line interface for servers, headless Linux/Windows machines, and automation.</p>
             </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.0/ghostmesh-cli-v0.2.0-windows-x64.zip" class="btn-download">
-              Download CLI Binary (v0.2.0)
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.1/ghostmesh-cli-v0.2.1-windows-x64.zip" class="btn-download">
+              Download CLI Binary (v0.2.1)
             </a>
           </div>
         </div>
@@ -206,6 +208,50 @@ npx ghostmesh-cli discover</code></pre>
           <li><strong>Active Mesh Links Table:</strong> View active peer endpoints, real-time RTT round-trip latency, and connection states (Connected / Disconnected).</li>
           <li><strong>System Tray Minimization:</strong> Closes cleanly to the Windows system tray and runs silently in the background without terminal prompts.</li>
         </ul>
+      </section>
+
+      <!-- Known Devices & Consent Flow -->
+      <section class="doc-section" id="known-devices">
+        <h2>Known Devices & Consent-Based Pairing</h2>
+        <p>GhostMesh v0.2.1 introduces persistent device memory coupled with an explicit mutual consent authorization protocol. You no longer need to regenerate and exchange invitation codes for devices you frequently connect with:</p>
+
+        <div class="callout">
+          <p><strong>Privacy & Security Guarantee:</strong> A previously connected device cannot silently reconnect or monitor your node without your permission. Every reconnection triggers a real-time consent request.</p>
+        </div>
+
+        <h3>How Consent Pairing Works</h3>
+        <ol>
+          <li><strong>Automatic Memory:</strong> Whenever a peer connects via an invitation ticket, their Curve25519 public key, Node ID, and last known endpoint are securely saved to your local encrypted config (<code>AppData/Roaming/GhostMesh/config.json</code>).</li>
+          <li><strong>Request Connection:</strong> In the <em>Known Devices</em> panel, clicking <strong>Connect</strong> sends a signed <code>PairRequest</code> packet over the mesh.</li>
+          <li><strong>Incoming Consent Banner:</strong> An alert banner appears instantly on the target peer's screen displaying your Node ID with two options:
+            <ul>
+              <li><strong>Accept:</strong> Instantly establishes the bi-directional encrypted tunnel and updates routing tables.</li>
+              <li><strong>Decline:</strong> Rejects the pairing attempt; no session is created.</li>
+            </ul>
+          </li>
+          <li><strong>Forget Device:</strong> Clicking <strong>Forget</strong> immediately deletes the peer from your trusted devices list and revokes future reconnection shortcuts.</li>
+        </ol>
+      </section>
+
+      <!-- Windows Remote Desktop (RDP) -->
+      <section class="doc-section" id="remote-desktop">
+        <h2>Windows Remote Desktop (RDP) Integration</h2>
+        <p>Take full remote control of your distant computers at up to 60 FPS without installing third-party proprietary software (such as TeamViewer, AnyDesk, or RustDesk). GhostMesh leverages native Windows Remote Desktop (<code>mstsc.exe</code>) operating directly over the encrypted mesh overlay:</p>
+
+        <div class="callout">
+          <p><strong>Zero Third-Party Dependencies:</strong> Windows includes a high-performance Remote Desktop client and server out of the box. GhostMesh provides the secure virtual LAN tunnel that makes it work across the internet without port forwarding.</p>
+        </div>
+
+        <h3>1-Click Launch from Dashboard</h3>
+        <p>In the <em>Active Peers</em> table of the GhostMesh GUI, each connected peer displays a <strong>Remote Desktop</strong> button. Clicking this button automatically spawns Windows <code>mstsc.exe /v:10.42.X.Y</code> targeting the remote machine's virtual mesh IP.</p>
+
+        <h3>Prerequisites on the Remote Host</h3>
+        <p>To accept incoming Remote Desktop connections on the remote computer:</p>
+        <ol>
+          <li>Open Windows <strong>Settings</strong> > <strong>System</strong> > <strong>Remote Desktop</strong>.</li>
+          <li>Toggle <strong>Enable Remote Desktop</strong> to <strong>On</strong>.</li>
+          <li>Ensure the Windows account on the remote host has a password set. When <code>mstsc</code> prompts for credentials, simply enter that computer's Windows username and password.</li>
+        </ol>
       </section>
 
       <!-- QR Code Pairing -->

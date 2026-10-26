@@ -34,6 +34,10 @@ impl IdentityKeypair {
         })
     }
 
+    pub fn from_key_bytes(private: [u8; 32], public: [u8; 32]) -> Self {
+        Self { private, public }
+    }
+
     pub fn node_id(&self) -> NodeId {
         let mut id_bytes = [0u8; 16];
         id_bytes.copy_from_slice(&self.public[0..16]);
