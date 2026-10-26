@@ -62,6 +62,8 @@
         <ul class="sidebar-menu">
           <li><a href="#gui-dashboard">Desktop Dashboard (GUI)</a></li>
           <li><a href="#known-devices">Known Devices & Consent Flow</a></li>
+          <li><a href="#mesh-firewall">Mesh Firewall & Permissions</a></li>
+          <li><a href="#ghostchat">GhostChat (Encrypted Messaging)</a></li>
           <li><a href="#remote-desktop">Windows Remote Desktop (RDP)</a></li>
           <li><a href="#qr-pairing">QR Code Instant Pairing</a></li>
           <li><a href="#ghostdrop">GhostDrop (P2P File Transfer)</a></li>
@@ -117,8 +119,8 @@ cargo run -p ghostmesh-gui</code></pre>
               <h4>Desktop GUI Dashboard</h4>
               <p>Standalone Windows executable with dark glassmorphism dashboard, system tray companion, and real-time latency monitor.</p>
             </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.1/ghostmesh-desktop-v0.2.1-windows-x64.zip" class="btn-download">
-              Download Desktop GUI (v0.2.1)
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.2/ghostmesh-desktop-v0.2.2-windows-x64.zip" class="btn-download">
+              Download Desktop GUI (v0.2.2)
             </a>
           </div>
 
@@ -127,8 +129,8 @@ cargo run -p ghostmesh-gui</code></pre>
               <h4>CLI Binary</h4>
               <p>Lightweight command-line interface for servers, headless Linux/Windows machines, and automation.</p>
             </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.1/ghostmesh-cli-v0.2.1-windows-x64.zip" class="btn-download">
-              Download CLI Binary (v0.2.1)
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.2/ghostmesh-cli-v0.2.2-windows-x64.zip" class="btn-download">
+              Download CLI Binary (v0.2.2)
             </a>
           </div>
         </div>
@@ -231,6 +233,28 @@ npx ghostmesh-cli discover</code></pre>
           </li>
           <li><strong>Forget Device:</strong> Clicking <strong>Forget</strong> immediately deletes the peer from your trusted devices list and revokes future reconnection shortcuts.</li>
         </ol>
+      </section>
+
+      <!-- Mesh Firewall & Granular Permissions -->
+      <section class="doc-section" id="mesh-firewall">
+        <h2>Mesh Firewall & Granular Peer Permissions</h2>
+        <p>GhostMesh includes a native peer-level access firewall. You can selectively enable or block capabilities for each saved machine:</p>
+        <ul>
+          <li><strong>RDP Toggle:</strong> Enable or forbid Remote Desktop incoming sessions from this node.</li>
+          <li><strong>Drop Toggle:</strong> Permit or reject high-speed GhostDrop file streams.</li>
+          <li><strong>Temporary Session:</strong> Marks the peer as an ephemeral guest; the device authorization is automatically revoked when the connection terminates.</li>
+        </ul>
+      </section>
+
+      <!-- GhostChat Encrypted Messaging -->
+      <section class="doc-section" id="ghostchat">
+        <h2>GhostChat - End-to-End Encrypted P2P Messaging</h2>
+        <p>GhostChat is a lightweight, zero-footprint instant messaging engine built right into GhostMesh:</p>
+        <ul>
+          <li><strong>Noise Protocol Authenticated:</strong> Every message packet (<code>0x09</code>) is encrypted point-to-point with ChaCha20-Poly1305.</li>
+          <li><strong>Zero Disk Storage:</strong> Messages exist strictly in RAM during the active session. No central servers or databases log your exchanges.</li>
+          <li><strong>Quick 1-Click Launch:</strong> Click the <strong>Chat</strong> button on any active link to immediately share notes, URLs, or credentials.</li>
+        </ul>
       </section>
 
       <!-- Windows Remote Desktop (RDP) -->

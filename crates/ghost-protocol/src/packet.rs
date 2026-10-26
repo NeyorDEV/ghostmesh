@@ -95,6 +95,7 @@ pub enum PacketType {
     PairRequest = 0x06,
     PairAccept = 0x07,
     PairReject = 0x08,
+    ChatMessage = 0x09,
 }
 
 impl TryFrom<u8> for PacketType {
@@ -110,6 +111,7 @@ impl TryFrom<u8> for PacketType {
             0x06 => Ok(Self::PairRequest),
             0x07 => Ok(Self::PairAccept),
             0x08 => Ok(Self::PairReject),
+            0x09 => Ok(Self::ChatMessage),
             other => Err(ProtocolError::UnknownPacketType(other)),
         }
     }

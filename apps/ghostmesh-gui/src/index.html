@@ -17,7 +17,7 @@
         <div class="logo-orb"></div>
         <div class="brand-text">
           <h1>GhostMesh</h1>
-          <span class="version-tag">v0.1.0 • P2P Overlay</span>
+          <span class="version-tag">v0.2.2 • P2P Overlay</span>
         </div>
       </div>
       <div class="header-status">
@@ -40,6 +40,18 @@
       <div class="incoming-actions">
         <button class="btn btn-accent" id="btn-accept-request">Accept</button>
         <button class="btn btn-secondary" id="btn-decline-request">Decline</button>
+      </div>
+    </div>
+
+    <!-- Update Available Banner -->
+    <div class="update-alert" id="update-alert" style="display: none;">
+      <div class="update-content">
+        <span class="badge-new">UPDATE</span>
+        <span>GhostMesh <strong id="update-tag">v0.2.2</strong> is available!</span>
+      </div>
+      <div class="update-actions">
+        <a href="https://github.com/NeyorDEV/ghostmesh/releases/latest" target="_blank" class="btn btn-accent" id="btn-update-link" style="padding: 4px 10px; font-size: 11px; text-decoration: none;">Download Update</a>
+        <button class="btn-close-sm" id="btn-close-update" title="Dismiss">&times;</button>
       </div>
     </div>
 
@@ -122,6 +134,7 @@
                 <th>Device Alias</th>
                 <th>Node ID</th>
                 <th>Last Known Endpoint</th>
+                <th>Permissions (Mesh Firewall)</th>
                 <th>Authorization & Connect</th>
               </tr>
             </thead>
@@ -212,7 +225,40 @@
           </div>
         </div>
       </section>
+
+      <!-- System Preferences & Autostart Section -->
+      <section class="settings-section" style="margin-top: 24px;">
+        <div class="section-header">
+          <h2>System Preferences</h2>
+        </div>
+        <div class="ghostdrop-card">
+          <label class="toggle-control">
+            <input type="checkbox" id="chk-autostart">
+            <span class="toggle-label">Start GhostMesh automatically on Windows login (Runs silently in system tray)</span>
+          </label>
+        </div>
+      </section>
     </main>
+
+    <!-- Modal: GhostChat -->
+    <div class="modal-overlay" id="modal-chat" style="display: none;">
+      <div class="modal modal-chat">
+        <div class="modal-header">
+          <div>
+            <h3 style="display: flex; align-items: center; gap: 8px;">GhostChat <span class="tag-e2e">[NOISE_XX ENCRYPTED]</span></h3>
+            <span class="font-mono text-muted" id="chat-peer-id" style="font-size: 11px;">Node: ...</span>
+          </div>
+          <button class="modal-close" data-close="modal-chat">&times;</button>
+        </div>
+        <div class="chat-body" id="chat-messages-container">
+          <div class="chat-empty">Direct P2P ephemeral session. No logs stored to disk.</div>
+        </div>
+        <div class="chat-footer">
+          <input type="text" id="chat-input-text" placeholder="Type an encrypted message (Enter to send)..." class="font-mono">
+          <button class="btn btn-accent" id="btn-send-chat">Send</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Modal: Invite Ticket -->
     <div class="modal-overlay" id="modal-invite">

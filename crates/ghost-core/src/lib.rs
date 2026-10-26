@@ -3,6 +3,8 @@ pub mod peer;
 pub mod relay;
 pub mod sync;
 
+use serde::{Deserialize, Serialize};
+
 pub use config::{load_config, save_config, AppConfig, KnownPeer};
 pub use peer::{Peer, PeerState, PeerTable};
 pub use relay::RelayClient;
@@ -48,6 +50,16 @@ pub struct MeshEngine {
     pub relay: Arc<RwLock<Option<RelayClient>>>,
     pub sync: Arc<GhostSyncEngine>,
     pub pending_request: Arc<RwLock<Option<PendingConnectionRequest>>>,
+    pub chat_messages: Arc<RwLock<Vec<ChatMessageEntry>>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ChatMessageEntry {
+    pub id: String,
+    pub sender: String,
+    pub recipient: String,
+    pub text: String,
+    pub timestamp_secs: u64,
 }
 
 impl MeshEngine {
@@ -125,6 +137,8 @@ impl MeshEngine {
             });
         }
 
+        let chat_messages = Arc::new(RwLock::new(Vec::new()));
+
         Ok(Self {
             identity,
             socket,
@@ -134,6 +148,7 @@ impl MeshEngine {
             relay,
             sync,
             pending_request,
+            chat_messages,
         })
     }
 
@@ -284,6 +299,23 @@ impl MeshEngine {
         Ok(())
     }
 
+    pub async fn send_chat_message(&self, dest_node: NodeId, text: &str) -> Result<(), EngineError> {
+        self.send_packet(dest_node, PacketType::ChatMessage, text.as_bytes()).await?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let mut chat_guard = self.chat_messages.write().await;
+        chat_guard.push(ChatMessageEntry {
+            id: format!("{}-{}", self.node_id(), ts),
+            sender: self.node_id().to_string(),
+            recipient: dest_node.to_string(),
+            text: text.to_string(),
+            timestamp_secs: ts,
+        });
+        Ok(())
+    }
+
     pub async fn start_background_tasks(self: &Arc<Self>) {
         let engine = Arc::clone(self);
         tokio::spawn(async move {
@@ -409,6 +441,24 @@ impl MeshEngine {
 
                                 PacketType::PairReject => {
                                     warn!("Connection request rejected by {} at {}", packet.src_node, remote_addr);
+                                }
+
+                                PacketType::ChatMessage => {
+                                    if let Ok(text) = String::from_utf8(packet.payload.to_vec()) {
+                                        info!("Chat message received from {}: {}", packet.src_node, text);
+                                        let ts = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs();
+                                        let mut chat_guard = self.chat_messages.write().await;
+                                        chat_guard.push(ChatMessageEntry {
+                                            id: format!("{}-{}", packet.src_node, ts),
+                                            sender: packet.src_node.to_string(),
+                                            recipient: self.node_id().to_string(),
+                                            text,
+                                            timestamp_secs: ts,
+                                        });
+                                    }
                                 }
 
                                 PacketType::StunProbe => {}

@@ -86,6 +86,7 @@ async function updatePeers() {
         <td>${p.last_seen_secs}s ago</td>
         <td>
           <button class="btn-rdp" onclick="launchRdp('${p.node_id}')">Remote Desktop</button>
+          <button class="btn-chat" onclick="openChat('${p.node_id}')">Chat</button>
         </td>
       </tr>
     `).join('');
@@ -292,7 +293,11 @@ btnJoin.addEventListener('click', () => {
 document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = btn.getAttribute('data-close');
-    document.getElementById(target).classList.remove('active');
+    const el = document.getElementById(target);
+    if (el) {
+      el.classList.remove('active');
+      el.style.display = 'none';
+    }
   });
 });
 
@@ -385,7 +390,7 @@ async function updateKnownDevices() {
       knownCount.textContent = '0 saved';
       knownTbody.innerHTML = `
         <tr class="empty-row">
-          <td colspan="4">No saved devices yet. Connected machines will be remembered here for easy reconnect.</td>
+          <td colspan="5">No saved devices yet. Connected machines will be remembered here for easy reconnect.</td>
         </tr>`;
       return;
     }
@@ -397,6 +402,13 @@ async function updateKnownDevices() {
         <td class="font-mono text-truncate" style="max-width: 140px;">${d.node_id}</td>
         <td class="font-mono">${d.endpoint}</td>
         <td>
+          <div class="perm-group">
+            <label class="perm-label" title="Allow Remote Desktop"><input type="checkbox" ${d.allow_rdp !== false ? 'checked' : ''} onchange="toggleDevicePerm('${d.node_id}', 'rdp', this.checked)"> RDP</label>
+            <label class="perm-label" title="Allow GhostDrop file transfer"><input type="checkbox" ${d.allow_ghostdrop !== false ? 'checked' : ''} onchange="toggleDevicePerm('${d.node_id}', 'drop', this.checked)"> Drop</label>
+            <label class="perm-label" title="Temporary session: revoke on disconnect"><input type="checkbox" ${d.temporary_session ? 'checked' : ''} onchange="toggleDevicePerm('${d.node_id}', 'temp', this.checked)"> Temp</label>
+          </div>
+        </td>
+        <td>
           <button class="btn-connect-sm" onclick="connectKnown('${d.node_id}', '${d.endpoint}')">Connect</button>
           <button class="btn-forget-sm" onclick="forgetDevice('${d.node_id}')">Forget</button>
         </td>
@@ -406,6 +418,31 @@ async function updateKnownDevices() {
     // Silently continue
   }
 }
+
+window.toggleDevicePerm = async function(nodeId, permType, value) {
+  try {
+    const devices = await invoke('get_known_devices') || [];
+    const dev = devices.find(d => d.node_id === nodeId);
+    if (!dev) return;
+
+    let allowRdp = dev.allow_rdp !== false;
+    let allowDrop = dev.allow_ghostdrop !== false;
+    let temporary = !!dev.temporary_session;
+
+    if (permType === 'rdp') allowRdp = value;
+    if (permType === 'drop') allowDrop = value;
+    if (permType === 'temp') temporary = value;
+
+    await invoke('update_device_permissions', {
+      nodeId,
+      allowRdp,
+      allowGhostdrop: allowDrop,
+      temporarySession: temporary,
+    });
+  } catch (e) {
+    console.error('Permission update error:', e);
+  }
+};
 
 window.connectKnown = async function(nodeId, endpoint) {
   try {
@@ -430,11 +467,136 @@ window.forgetDevice = async function(nodeId) {
 
 window.launchRdp = async function(nodeId) {
   try {
-    await invoke('launch_rdp', { virtualIp: '10.42.0.1' });
+    await invoke('launch_rdp', { nodeId: nodeId });
   } catch (e) {
     alert('RDP launch error: ' + e);
   }
 };
+
+// GhostChat Implementation
+const modalChat = document.getElementById('modal-chat');
+const chatPeerIdEl = document.getElementById('chat-peer-id');
+const chatMessagesContainer = document.getElementById('chat-messages-container');
+const chatInputText = document.getElementById('chat-input-text');
+const btnSendChat = document.getElementById('btn-send-chat');
+let activeChatPeer = null;
+let chatPollInterval = null;
+
+window.openChat = function(nodeId) {
+  activeChatPeer = nodeId;
+  chatPeerIdEl.textContent = 'Node: ' + nodeId;
+  modalChat.style.display = 'flex';
+  chatMessagesContainer.innerHTML = '<div class="chat-empty">Loading secure chat...</div>';
+  updateChatMessages();
+
+  if (chatPollInterval) clearInterval(chatPollInterval);
+  chatPollInterval = setInterval(updateChatMessages, 1200);
+  setTimeout(() => chatInputText.focus(), 100);
+};
+
+async function updateChatMessages() {
+  if (!activeChatPeer || modalChat.style.display === 'none') return;
+  try {
+    const msgs = await invoke('get_chat_messages', { targetNodeId: activeChatPeer }) || [];
+    if (msgs.length === 0) {
+      chatMessagesContainer.innerHTML = '<div class="chat-empty">No messages yet. Send an encrypted message below.</div>';
+      return;
+    }
+
+    const html = msgs.map(m => {
+      const isOut = m.recipient === activeChatPeer;
+      const date = new Date(m.timestamp_secs * 1000);
+      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return `
+        <div class="chat-bubble ${isOut ? 'outgoing' : 'incoming'}">
+          <div class="chat-text">${escapeHtml(m.text)}</div>
+          <div class="chat-meta">${timeStr}</div>
+        </div>
+      `;
+    }).join('');
+
+    chatMessagesContainer.innerHTML = html;
+    chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+  } catch (e) {
+    console.error('Chat error:', e);
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function sendCurrentChatMessage() {
+  const text = chatInputText.value.trim();
+  if (!text || !activeChatPeer) return;
+
+  chatInputText.value = '';
+  try {
+    await invoke('send_chat_message', {
+      targetNodeId: activeChatPeer,
+      text: text,
+    });
+    updateChatMessages();
+  } catch (e) {
+    alert('Failed to send message: ' + e);
+  }
+}
+
+btnSendChat.addEventListener('click', sendCurrentChatMessage);
+chatInputText.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    sendCurrentChatMessage();
+  }
+});
+
+// Autostart Settings
+const chkAutostart = document.getElementById('chk-autostart');
+async function initAutostart() {
+  try {
+    const enabled = await invoke('get_autostart');
+    chkAutostart.checked = !!enabled;
+  } catch (e) {
+    console.error('Autostart init error:', e);
+  }
+}
+
+chkAutostart.addEventListener('change', async function() {
+  try {
+    await invoke('set_autostart', { enable: this.checked });
+  } catch (e) {
+    alert('Failed to update startup configuration: ' + e);
+  }
+});
+
+// Auto-Updater Check
+const updateAlert = document.getElementById('update-alert');
+const updateTag = document.getElementById('update-tag');
+const btnCloseUpdate = document.getElementById('btn-close-update');
+const btnUpdateLink = document.getElementById('btn-update-link');
+
+async function checkForUpdates() {
+  try {
+    const res = await fetch('https://api.github.com/repos/NeyorDEV/ghostmesh/releases/latest');
+    if (res.ok) {
+      const data = await res.json();
+      const latestTag = data.tag_name || '';
+      const currentVer = 'v0.2.1';
+      if (latestTag && latestTag !== currentVer && latestTag > currentVer) {
+        updateTag.textContent = latestTag;
+        updateAlert.style.display = 'flex';
+      }
+    }
+  } catch (e) {
+    // Silently continue if offline
+  }
+}
+
+btnCloseUpdate.addEventListener('click', () => {
+  updateAlert.style.display = 'none';
+});
 
 btnRefresh.addEventListener('click', () => {
   updateStatus();
@@ -443,9 +605,12 @@ btnRefresh.addEventListener('click', () => {
   updateSyncStatus();
   updateKnownDevices();
   updateIncomingRequests();
+  checkForUpdates();
 });
 
-// Periodic polling
+// Initialize
+initAutostart();
+checkForUpdates();
 updateStatus();
 updatePeers();
 updateTransferMonitor();

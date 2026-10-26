@@ -14,8 +14,8 @@ GhostMesh connects your devices directly over UDP without relying on centralized
 
 Download the pre-compiled binaries from the **[Latest Release](https://github.com/NeyorDEV/ghostmesh/releases/latest)**:
 
-- **Desktop GUI (Windows x64):** [`ghostmesh-desktop-v0.2.1-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.1/ghostmesh-desktop-v0.2.1-windows-x64.zip) (Standalone executable `GhostMesh.exe`, zero dependencies).
-- **CLI Binary (Windows x64):** [`ghostmesh-cli-v0.2.1-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.1/ghostmesh-cli-v0.2.1-windows-x64.zip).
+- **Desktop GUI (Windows x64):** [`ghostmesh-desktop-v0.2.2-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.2/ghostmesh-desktop-v0.2.2-windows-x64.zip) (Standalone executable `GhostMesh.exe`, zero dependencies).
+- **CLI Binary (Windows x64):** [`ghostmesh-cli-v0.2.2-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.2/ghostmesh-cli-v0.2.2-windows-x64.zip).
 
 ---
 
@@ -23,8 +23,11 @@ Download the pre-compiled binaries from the **[Latest Release](https://github.co
 
 - **Direct P2P Connectivity & Automated UPnP:** Traverses domestic NATs and firewalls via synchronized UDP hole punching and automated router port mapping.
 - **Consent-Based Reconnection & Known Devices:** Remembers previously paired computers. One-click reconnect dispatches an authorization request with real-time **Accept** / **Decline** prompts and device revocation (**Forget**).
+- **Per-Device Mesh Firewall:** Granular permissions per peer to enable or block Remote Desktop (RDP), GhostDrop file transfers, and temporary auto-revoking sessions.
+- **GhostChat (P2P Encrypted Messaging):** Real-time instant messaging encrypted end-to-end with the Noise Protocol, ephemeral with zero server logs.
+- **GhostDrop with Resume & Folder Support:** High-throughput P2P transfers with automatic resumption on network cuts and automatic folder zipping on the fly.
 - **One-Click Windows Remote Desktop (RDP):** Built-in integration with native Windows `mstsc.exe` over encrypted virtual mesh IPs (`10.42.X.Y`). Control remote PCs at 60 FPS without installing third-party software (AnyDesk, TeamViewer).
-- **GhostDrop (All-in-One File Transfer):** High-throughput P2P file transfers directly within the GUI and CLI (`ghostmesh send`) with no file size limits.
+- **Silent Windows Autostart:** Optional startup on Windows login running minimized directly in the system tray.
 - **GhostSync (Continuous Folder Sync):** Automatically watches a local folder and synchronizes changes across connected peers in real time.
 - **QR Code Instant Pairing:** Vector SVG QR Code generation for one-tap companion device pairing.
 - **Multi-Hop Mesh Forwarding:** Transparent packet routing across intermediary nodes when direct links are asymmetric.

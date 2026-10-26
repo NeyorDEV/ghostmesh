@@ -6,6 +6,12 @@ pub struct AppConfig {
     pub private_key_hex: Option<String>,
     pub public_key_hex: Option<String>,
     pub known_peers: Vec<KnownPeer>,
+    #[serde(default)]
+    pub autostart: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -14,6 +20,12 @@ pub struct KnownPeer {
     pub node_id: String,
     pub endpoint: String,
     pub last_seen: String,
+    #[serde(default = "default_true")]
+    pub allow_rdp: bool,
+    #[serde(default = "default_true")]
+    pub allow_ghostdrop: bool,
+    #[serde(default)]
+    pub temporary_session: bool,
 }
 
 pub fn get_config_path() -> PathBuf {

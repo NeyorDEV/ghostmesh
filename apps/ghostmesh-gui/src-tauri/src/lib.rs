@@ -157,6 +157,106 @@ fn remove_known_device(node_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn update_device_permissions(
+    node_id: String,
+    allow_rdp: bool,
+    allow_ghostdrop: bool,
+    temporary_session: bool,
+) -> Result<(), String> {
+    let mut cfg = ghost_core::load_config();
+    if let Some(peer) = cfg.known_peers.iter_mut().find(|p| p.node_id == node_id) {
+        peer.allow_rdp = allow_rdp;
+        peer.allow_ghostdrop = allow_ghostdrop;
+        peer.temporary_session = temporary_session;
+    }
+    ghost_core::save_config(&cfg)
+}
+
+#[tauri::command]
+async fn send_chat_message(
+    target_node_id: String,
+    text: String,
+    state: State<'_, GuiState>,
+) -> Result<(), String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e| format!("{e}"))?;
+    engine
+        .send_chat_message(dest_node, &text)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_chat_messages(
+    target_node_id: String,
+    state: State<'_, GuiState>,
+) -> Result<Vec<ghost_core::ChatMessageEntry>, String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let msgs = engine.chat_messages.read().await;
+    let filtered = msgs
+        .iter()
+        .filter(|m| m.sender == target_node_id || m.recipient == target_node_id)
+        .cloned()
+        .collect();
+    Ok(filtered)
+}
+
+#[tauri::command]
+fn get_autostart() -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("reg")
+            .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "GhostMesh"])
+            .output();
+        if let Ok(out) = output {
+            return Ok(out.status.success());
+        }
+    }
+    let cfg = ghost_core::load_config();
+    Ok(cfg.autostart)
+}
+
+#[tauri::command]
+fn set_autostart(enable: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        if enable {
+            if let Ok(exe_path) = std::env::current_exe() {
+                let val = format!("\"{}\" --silent", exe_path.to_str().unwrap_or("GhostMesh.exe"));
+                let _ = std::process::Command::new("reg")
+                    .args([
+                        "add",
+                        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                        "/v",
+                        "GhostMesh",
+                        "/t",
+                        "REG_SZ",
+                        "/d",
+                        &val,
+                        "/f",
+                    ])
+                    .output();
+            }
+        } else {
+            let _ = std::process::Command::new("reg")
+                .args([
+                    "delete",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    "GhostMesh",
+                    "/f",
+                ])
+                .output();
+        }
+    }
+    let mut cfg = ghost_core::load_config();
+    cfg.autostart = enable;
+    ghost_core::save_config(&cfg)
+}
+
+#[tauri::command]
 async fn request_device_connect(
     target_node_id: String,
     target_endpoint: String,
@@ -210,7 +310,16 @@ async fn respond_connection_request(
 }
 
 #[tauri::command]
-fn launch_rdp(virtual_ip: String) -> Result<(), String> {
+fn launch_rdp(virtual_ip: String, node_id: Option<String>) -> Result<(), String> {
+    if let Some(ref nid) = node_id {
+        let cfg = ghost_core::load_config();
+        if let Some(peer) = cfg.known_peers.iter().find(|p| &p.node_id == nid) {
+            if !peer.allow_rdp {
+                return Err("Remote Desktop is blocked by policy for this device.".into());
+            }
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
         let ip = if let Some((clean_ip, _)) = virtual_ip.split_once('/') {
@@ -253,13 +362,16 @@ pub fn run() {
             transfer_status: Arc::clone(&transfer_status),
         })
         .setup(|app| {
+            let is_silent = std::env::args().any(|a| a == "--silent" || a == "--minimized");
             if let Some(win) = app.get_webview_window("main") {
                 if let Some(icon) = app.default_window_icon() {
                     let _ = win.set_icon(icon.clone());
                 }
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
+                if !is_silent {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
             }
 
             let handle = app.handle().clone();
@@ -326,10 +438,15 @@ pub fn run() {
             ghostsync_get_status,
             get_known_devices,
             remove_known_device,
+            update_device_permissions,
             request_device_connect,
             get_pending_connection_request,
             respond_connection_request,
-            launch_rdp
+            launch_rdp,
+            send_chat_message,
+            get_chat_messages,
+            get_autostart,
+            set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostMesh desktop application");

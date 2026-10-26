@@ -1,13 +1,14 @@
 use serde::{Deserialize, Serialize};
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-const GHOSTDROP_MAGIC: &[u8; 4] = b"GD01";
+const GHOSTDROP_MAGIC: &[u8; 4] = b"GD02"; // Version 2 with Resume & Folder support
 pub const GHOSTDROP_PORT: u16 = 4243;
 const CHUNK_SIZE: usize = 128 * 1024; // 128 KB buffer
 
@@ -93,28 +94,61 @@ async fn handle_incoming_transfer(
 
     let out_dir = get_transfers_dir();
     let dest_path = out_dir.join(&safe_filename);
-    let mut out_file = tokio::fs::File::create(&dest_path).await?;
 
-    info!("Receiving GhostDrop file '{safe_filename}' ({total_size} bytes) to {:?}", dest_path);
+    // Resume logic: check existing partial file
+    let mut resume_offset: u64 = 0;
+    if dest_path.exists() {
+        if let Ok(meta) = tokio::fs::metadata(&dest_path).await {
+            let existing_size = meta.len();
+            if existing_size > 0 && existing_size < total_size {
+                resume_offset = existing_size;
+                info!("GhostDrop resuming '{safe_filename}' from byte offset {resume_offset}/{total_size}");
+            }
+        }
+    }
+
+    // Acknowledge resume offset to sender
+    socket.write_u64(resume_offset).await?;
+
+    let mut out_file = if resume_offset > 0 {
+        tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&dest_path)
+            .await?
+    } else {
+        tokio::fs::File::create(&dest_path).await?
+    };
+
+    info!("Receiving GhostDrop file '{safe_filename}' ({total_size} bytes, offset {resume_offset}) to {:?}", dest_path);
 
     {
         let mut guard = status_state.write().await;
+        let pct = if total_size > 0 {
+            (resume_offset as f32 / total_size as f32) * 100.0
+        } else {
+            0.0
+        };
         *guard = Some(TransferStatus {
             is_active: true,
             direction: "receiving".into(),
             filename: safe_filename.clone(),
             total_bytes: total_size,
-            transferred_bytes: 0,
-            percent: 0.0,
+            transferred_bytes: resume_offset,
+            percent: pct,
             speed_mbps: 0.0,
-            status_message: format!("Receiving {safe_filename}..."),
+            status_message: if resume_offset > 0 {
+                format!("Resuming {safe_filename} from {pct:.0}%...")
+            } else {
+                format!("Receiving {safe_filename}...")
+            },
             is_completed: false,
             error: None,
         });
     }
 
     let mut buffer = vec![0u8; CHUNK_SIZE];
-    let mut transferred: u64 = 0;
+    let mut transferred: u64 = resume_offset;
     let start_time = Instant::now();
     let mut last_speed_calc = Instant::now();
     let mut bytes_since_last = 0u64;
@@ -178,19 +212,48 @@ pub async fn send_file(
 ) -> Result<(), String> {
     let path = Path::new(file_path_str);
     if !path.exists() {
-        return Err(format!("File does not exist: {file_path_str}"));
+        return Err(format!("Path does not exist: {file_path_str}"));
     }
 
-    let metadata = tokio::fs::metadata(path)
+    // Auto-detect and compress directories into a zip archive on the fly
+    let (real_path, filename, is_temp) = if path.is_dir() {
+        let base_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("folder");
+        let zip_name = format!("{base_name}.zip");
+        let temp_zip = std::env::temp_dir().join(&zip_name);
+
+        info!("GhostDrop auto-zipping folder {:?} to {:?}", path, temp_zip);
+        #[cfg(target_os = "windows")]
+        {
+            let parent_dir = path.parent().unwrap_or(path);
+            let _ = std::process::Command::new("tar")
+                .args([
+                    "-a",
+                    "-cf",
+                    temp_zip.to_str().unwrap(),
+                    "-C",
+                    parent_dir.to_str().unwrap(),
+                    base_name,
+                ])
+                .output();
+        }
+
+        (temp_zip, zip_name, true)
+    } else {
+        let fn_str = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| "Invalid filename".to_string())?
+            .to_string();
+        (path.to_path_buf(), fn_str, false)
+    };
+
+    let metadata = tokio::fs::metadata(&real_path)
         .await
         .map_err(|e| format!("Failed to read metadata: {e}"))?;
     let total_size = metadata.len();
-
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| "Invalid filename".to_string())?
-        .to_string();
 
     let target_ip = if let Some((ip, _)) = target_host.split_once(':') {
         ip
@@ -232,12 +295,22 @@ pub async fn send_file(
     socket.write_u16(fn_bytes.len() as u16).await.map_err(|e| e.to_string())?;
     socket.write_all(fn_bytes).await.map_err(|e| e.to_string())?;
 
-    let mut file = tokio::fs::File::open(path)
+    // Read resume offset from receiver
+    let resume_offset = socket.read_u64().await.map_err(|e| e.to_string())?;
+
+    let mut file = tokio::fs::File::open(&real_path)
         .await
         .map_err(|e| format!("Failed to open file: {e}"))?;
 
+    if resume_offset > 0 {
+        file.seek(SeekFrom::Start(resume_offset))
+            .await
+            .map_err(|e| e.to_string())?;
+        info!("Resuming upload for '{filename}' from offset {resume_offset}/{total_size}");
+    }
+
     let mut buffer = vec![0u8; CHUNK_SIZE];
-    let mut transferred: u64 = 0;
+    let mut transferred: u64 = resume_offset;
     let start_time = Instant::now();
     let mut last_speed_calc = Instant::now();
     let mut bytes_since_last = 0u64;
@@ -270,6 +343,10 @@ pub async fn send_file(
     }
 
     socket.flush().await.map_err(|e| e.to_string())?;
+
+    if is_temp {
+        let _ = tokio::fs::remove_file(&real_path).await;
+    }
 
     let total_time = start_time.elapsed().as_secs_f64().max(0.001);
     let avg_speed = (transferred as f64 / 1_000_000.0) / total_time;
