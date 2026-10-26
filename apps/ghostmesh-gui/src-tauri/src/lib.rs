@@ -1,17 +1,17 @@
+mod ghostdrop;
+
 use ghost_core::MeshEngine;
 use ghost_protocol::InviteTicket;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tauri::{Manager, State};
-
 use tokio::sync::RwLock;
-
-
 
 pub struct GuiState {
     pub engine: Arc<RwLock<Option<Arc<MeshEngine>>>>,
     pub virtual_ip: Arc<RwLock<Option<Ipv4Addr>>>,
+    pub transfer_status: Arc<RwLock<Option<ghostdrop::TransferStatus>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -91,13 +91,55 @@ async fn get_peers(state: State<'_, GuiState>) -> Result<Vec<PeerInfo>, String> 
     Ok(list)
 }
 
+#[tauri::command]
+async fn ghostdrop_send(
+    target: String,
+    file_path: String,
+    state: State<'_, GuiState>,
+) -> Result<String, String> {
+    let status_clone = Arc::clone(&state.transfer_status);
+    tokio::spawn(async move {
+        if let Err(e) = ghostdrop::send_file(&target, &file_path, status_clone).await {
+            eprintln!("GhostDrop send error: {e}");
+        }
+    });
+    Ok("Transfer initiated".into())
+}
+
+#[tauri::command]
+async fn ghostdrop_get_status(
+    state: State<'_, GuiState>,
+) -> Result<Option<ghostdrop::TransferStatus>, String> {
+    let guard = state.transfer_status.read().await;
+    Ok(guard.clone())
+}
+
+#[tauri::command]
+async fn ghostdrop_open_folder() -> Result<(), String> {
+    let folder = ghostdrop::get_transfers_dir();
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer").arg(&folder).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&folder).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&folder).spawn();
+    }
+    Ok(())
+}
+
 pub fn run() {
+    let transfer_status = Arc::new(RwLock::new(None));
+
     tauri::Builder::default()
-
         .manage(GuiState {
-
             engine: Arc::new(RwLock::new(None)),
-            virtual_ip: Arc::new(RwLock::new(Some(Ipv4Addr::new(10, 42, 0, 1)))),
+            virtual_ip: Arc::new(RwLock::new(None)),
+            transfer_status: Arc::clone(&transfer_status),
         })
         .setup(|app| {
             if let Some(win) = app.get_webview_window("main") {
@@ -108,13 +150,19 @@ pub fn run() {
 
             let handle = app.handle().clone();
 
-
             tauri::async_runtime::spawn(async move {
-
                 match MeshEngine::bind(4242).await {
                     Ok(engine) => {
                         let arc_engine = Arc::new(engine);
                         let state = handle.state::<GuiState>();
+
+                        // Deterministic virtual IP derived cryptographically from NodeId
+                        let node_vip = arc_engine.node_id().to_virtual_ip();
+                        {
+                            let mut vip_guard = state.virtual_ip.write().await;
+                            *vip_guard = Some(node_vip);
+                        }
+
                         {
                             let mut guard = state.engine.write().await;
                             *guard = Some(Arc::clone(&arc_engine));
@@ -126,6 +174,12 @@ pub fn run() {
                         });
 
                         arc_engine.start_background_tasks().await;
+
+                        // Start GhostDrop TCP transfer listener on port 4243
+                        let transfer_status_clone = Arc::clone(&state.transfer_status);
+                        tokio::spawn(async move {
+                            ghostdrop::start_ghostdrop_server(transfer_status_clone).await;
+                        });
                     }
                     Err(e) => {
                         eprintln!("Failed to bind mesh engine: {e}");
@@ -139,7 +193,10 @@ pub fn run() {
             get_node_status,
             create_invite,
             join_peer,
-            get_peers
+            get_peers,
+            ghostdrop_send,
+            ghostdrop_get_status,
+            ghostdrop_open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostMesh desktop application");

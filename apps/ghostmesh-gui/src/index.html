@@ -90,6 +90,57 @@
           </table>
         </div>
       </section>
+
+      <!-- GhostDrop P2P File Transfer Section -->
+      <section class="ghostdrop-section">
+        <div class="section-header">
+          <h2>GhostDrop • Direct P2P File Transfer</h2>
+          <button class="btn-ghost" id="btn-open-transfers" title="Open Transfers Folder">
+            📁 Open Received Folder
+          </button>
+        </div>
+
+        <div class="ghostdrop-card">
+          <div class="ghostdrop-controls">
+            <div class="input-group">
+              <label for="gd-target-peer">Target Peer</label>
+              <select id="gd-target-peer" class="font-mono">
+                <option value="">Select a connected peer...</option>
+              </select>
+            </div>
+
+            <div class="input-group file-picker-group">
+              <label>Select File (No size limit • High-speed P2P stream)</label>
+              <div class="file-picker-row">
+                <input type="text" id="gd-filepath-input" placeholder="e.g. C:\Files\video.mp4 or click Browse" class="font-mono">
+                <input type="file" id="gd-file-elem" style="display: none;">
+                <button class="btn btn-secondary" id="btn-browse-file">Browse...</button>
+              </div>
+            </div>
+
+            <div class="ghostdrop-actions">
+              <button class="btn btn-accent" id="btn-start-transfer" disabled>
+                🚀 Send with GhostDrop
+              </button>
+            </div>
+          </div>
+
+          <!-- Transfer Live Monitor -->
+          <div class="transfer-monitor" id="transfer-monitor" style="display: none;">
+            <div class="monitor-header">
+              <span class="file-label font-mono" id="tm-filename">archive.zip</span>
+              <span class="speed-label font-mono" id="tm-speed">0.0 MB/s</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="tm-fill" style="width: 0%;"></div>
+            </div>
+            <div class="monitor-footer">
+              <span id="tm-status">Transfer in progress...</span>
+              <span class="font-mono" id="tm-stats">0 MB / 0 MB (0%)</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Modal: Invite Ticket -->

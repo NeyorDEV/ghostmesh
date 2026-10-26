@@ -35,6 +35,13 @@ impl NodeId {
     pub fn as_bytes(&self) -> &[u8; 16] {
         &self.0
     }
+
+    /// Derives a deterministic virtual IPv4 address in the 10.42.0.0/16 subnet.
+    pub fn to_virtual_ip(&self) -> std::net::Ipv4Addr {
+        let x = (self.0[14] % 254) + 1;
+        let y = (self.0[15] % 253) + 1;
+        std::net::Ipv4Addr::new(10, 42, x, y)
+    }
 }
 
 impl fmt::Display for NodeId {
@@ -213,5 +220,15 @@ mod tests {
         let short = vec![0x47, 0x4D, 0x01];
         let err = Packet::decode(&short).unwrap_err();
         assert_eq!(err, ProtocolError::PacketTooShort(3));
+    }
+
+    #[test]
+    fn test_node_id_virtual_ip() {
+        let mut bytes = [0u8; 16];
+        bytes[14] = 10;
+        bytes[15] = 20;
+        let id = NodeId::new(bytes);
+        let ip = id.to_virtual_ip();
+        assert_eq!(ip, std::net::Ipv4Addr::new(10, 42, 11, 21));
     }
 }

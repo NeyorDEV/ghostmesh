@@ -5,7 +5,6 @@ function invoke(cmd, args) {
   return Promise.resolve(null);
 }
 
-
 // DOM Elements
 const elStatusLabel = document.getElementById('status-label');
 const elStatusBadge = document.getElementById('status-indicator');
@@ -28,6 +27,24 @@ const btnCopyTicket = document.getElementById('btn-copy-ticket');
 const btnSubmitJoin = document.getElementById('btn-submit-join');
 const btnRefresh = document.getElementById('btn-refresh');
 
+// GhostDrop DOM Elements
+const selectTargetPeer = document.getElementById('gd-target-peer');
+const inputFilePath = document.getElementById('gd-filepath-input');
+const inputFileElem = document.getElementById('gd-file-elem');
+const btnBrowseFile = document.getElementById('btn-browse-file');
+const btnStartTransfer = document.getElementById('btn-start-transfer');
+const btnOpenTransfers = document.getElementById('btn-open-transfers');
+
+// Transfer Monitor
+const transferMonitor = document.getElementById('transfer-monitor');
+const tmFilename = document.getElementById('tm-filename');
+const tmSpeed = document.getElementById('tm-speed');
+const tmFill = document.getElementById('tm-fill');
+const tmStatus = document.getElementById('tm-status');
+const tmStats = document.getElementById('tm-stats');
+
+let cachedPeers = [];
+
 async function updateStatus() {
   try {
     const status = await invoke('get_node_status');
@@ -41,8 +58,7 @@ async function updateStatus() {
       elPeersCount.textContent = status.peers_count;
     }
   } catch (err) {
-    // When running inside browser dev server without Tauri backend
-    elStatusLabel.textContent = 'GUI Mode (Connecting...)';
+    elStatusLabel.textContent = 'Standby (Connecting...)';
     elNodeId.textContent = 'Simulated Local Node';
     elEndpoint.textContent = '0.0.0.0:4242';
   }
@@ -51,11 +67,14 @@ async function updateStatus() {
 async function updatePeers() {
   try {
     const peers = await invoke('get_peers');
+    cachedPeers = peers || [];
+
     if (!peers || peers.length === 0) {
       elPeersTbody.innerHTML = `
         <tr class="empty-row">
           <td colspan="4">No peers connected yet. Click "Invite Peer" or "Join Network" to establish a direct P2P link.</td>
         </tr>`;
+      syncPeerSelect([]);
       return;
     }
 
@@ -63,11 +82,123 @@ async function updatePeers() {
       <tr>
         <td class="font-mono text-truncate" style="max-width: 180px;">${p.node_id}</td>
         <td class="font-mono">${p.endpoint}</td>
-        <td><span class="green-text">● ${p.state}</span></td>
+        <td><span class="${p.state === 'Connected' ? 'green-text' : 'text-muted'}">● ${p.state}</span></td>
         <td>${p.last_seen_secs}s ago</td>
       </tr>
     `).join('');
+
+    syncPeerSelect(peers);
   } catch (err) {
+    // Silently continue
+  }
+}
+
+function syncPeerSelect(peers) {
+  const currentVal = selectTargetPeer.value;
+  let options = '<option value="">Select a connected peer...</option>';
+  peers.forEach(p => {
+    options += `<option value="${p.endpoint}">${p.endpoint} (Node: ${p.node_id.substring(0, 10)}...)</option>`;
+  });
+  selectTargetPeer.innerHTML = options;
+  if (currentVal && peers.some(p => p.endpoint === currentVal)) {
+    selectTargetPeer.value = currentVal;
+  }
+  checkTransferReady();
+}
+
+function checkTransferReady() {
+  const hasPeer = selectTargetPeer.value.trim().length > 0;
+  const hasFile = inputFilePath.value.trim().length > 0;
+  btnStartTransfer.disabled = !(hasPeer && hasFile);
+}
+
+selectTargetPeer.addEventListener('change', checkTransferReady);
+inputFilePath.addEventListener('input', checkTransferReady);
+
+// File Browse Handling
+btnBrowseFile.addEventListener('click', () => {
+  inputFileElem.click();
+});
+
+inputFileElem.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    // In Tauri webview or desktop, file.name or full path
+    inputFilePath.value = file.name;
+    checkTransferReady();
+  }
+});
+
+// Drag and drop support
+const dropZone = document.querySelector('.ghostdrop-card');
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.style.borderColor = 'var(--accent)';
+});
+
+dropZone.addEventListener('dragleave', () => {
+  dropZone.style.borderColor = 'var(--border)';
+});
+
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.style.borderColor = 'var(--border)';
+  if (e.dataTransfer.files.length > 0) {
+    const file = e.dataTransfer.files[0];
+    inputFilePath.value = file.name;
+    checkTransferReady();
+  }
+});
+
+// Start Transfer
+btnStartTransfer.addEventListener('click', async () => {
+  const target = selectTargetPeer.value;
+  const filePath = inputFilePath.value.trim();
+  if (!target || !filePath) return;
+
+  btnStartTransfer.disabled = true;
+  btnStartTransfer.textContent = 'Initiating...';
+
+  try {
+    await invoke('ghostdrop_send', { target, filePath });
+    transferMonitor.style.display = 'block';
+  } catch (e) {
+    alert('GhostDrop error: ' + e);
+  } finally {
+    btnStartTransfer.textContent = '🚀 Send with GhostDrop';
+    checkTransferReady();
+  }
+});
+
+// Open Transfers Folder
+btnOpenTransfers.addEventListener('click', async () => {
+  try {
+    await invoke('ghostdrop_open_folder');
+  } catch (e) {
+    alert('Cannot open folder: ' + e);
+  }
+});
+
+// Monitor GhostDrop Transfer State
+async function updateTransferMonitor() {
+  try {
+    const st = await invoke('ghostdrop_get_status');
+    if (!st) {
+      return;
+    }
+
+    if (st.is_active || st.is_completed) {
+      transferMonitor.style.display = 'block';
+      tmFilename.textContent = (st.direction === 'sending' ? '📤 Sending: ' : '📥 Receiving: ') + st.filename;
+      tmSpeed.textContent = st.speed_mbps > 0 ? `${st.speed_mbps.toFixed(1)} MB/s` : '-- MB/s';
+      tmFill.style.width = `${Math.min(100, Math.max(0, st.percent))}%`;
+      tmStatus.textContent = st.status_message;
+
+      const currentMB = (st.transferred_bytes / 1000000).toFixed(1);
+      const totalMB = (st.total_bytes / 1000000).toFixed(1);
+      tmStats.textContent = `${currentMB} MB / ${totalMB} MB (${st.percent.toFixed(0)}%)`;
+    }
+  } catch (e) {
     // Silently continue
   }
 }
@@ -125,10 +256,13 @@ btnSubmitJoin.addEventListener('click', async () => {
 btnRefresh.addEventListener('click', () => {
   updateStatus();
   updatePeers();
+  updateTransferMonitor();
 });
 
 // Periodic polling
 updateStatus();
 updatePeers();
+updateTransferMonitor();
 setInterval(updateStatus, 3000);
 setInterval(updatePeers, 2000);
+setInterval(updateTransferMonitor, 400);

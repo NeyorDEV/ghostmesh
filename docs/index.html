@@ -59,6 +59,7 @@
         <div class="sidebar-title">Reference & Guides</div>
         <ul class="sidebar-menu">
           <li><a href="#gui-dashboard">Desktop Dashboard (GUI)</a></li>
+          <li><a href="#ghostdrop">GhostDrop (P2P File Transfer)</a></li>
           <li><a href="#cli-reference">CLI Reference</a></li>
           <li><a href="#troubleshooting">Firewalls & Troubleshooting</a></li>
         </ul>
@@ -110,8 +111,8 @@ cargo run -p ghostmesh-gui</code></pre>
               <h4>Desktop GUI Dashboard</h4>
               <p>Standalone Windows executable with dark glassmorphism dashboard, system tray companion, and real-time latency monitor.</p>
             </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.2/ghostmesh-desktop-v0.1.2-windows-x64.zip" class="btn-download">
-              Download Desktop GUI (v0.1.2)
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.3/ghostmesh-desktop-v0.1.3-windows-x64.zip" class="btn-download">
+              Download Desktop GUI (v0.1.3)
             </a>
           </div>
 
@@ -195,6 +196,24 @@ npx ghostmesh-cli discover</code></pre>
           <li><strong>Active Mesh Links Table:</strong> View active peer endpoints, real-time RTT round-trip latency, and connection states (Connected / Disconnected).</li>
           <li><strong>System Tray Minimization:</strong> Closes cleanly to the Windows system tray and runs silently in the background without terminal prompts.</li>
         </ul>
+      </section>
+
+      <!-- GhostDrop File Transfer -->
+      <section class="doc-section" id="ghostdrop">
+        <h2>GhostDrop • Built-in P2P File Transfer</h2>
+        <p>GhostDrop is GhostMesh's native all-in-one file transfer engine. Unlike cloud storage or local-only utilities like AirDrop, GhostDrop transfers files directly peer-to-peer across the internet at the maximum physical speed of your connection:</p>
+
+        <div class="callout">
+          <p><strong>All-In-One Convenience:</strong> Zero third-party tools needed. No need to configure Windows SMB shares, open firewall ports, or install LocalSend. GhostDrop runs directly inside the GhostMesh interface.</p>
+        </div>
+
+        <h3>How it Works</h3>
+        <ol>
+          <li><strong>Select a Connected Peer:</strong> Choose from the active peers listed in your mesh network.</li>
+          <li><strong>Pick Any File:</strong> Drag and drop or browse for any file (archives, video files, datasets). There is <strong>no file size limit</strong>.</li>
+          <li><strong>Stream with GhostDrop:</strong> High-throughput asynchronous streaming sends encrypted 128 KB chunks directly to the recipient over port <code>4243</code>.</li>
+          <li><strong>Auto-Save to Transfers:</strong> The receiving peer automatically saves files to <code>Downloads/GhostMesh-Transfers/</code> and displays real-time MB/s throughput.</li>
+        </ol>
       </section>
 
       <!-- CLI Reference -->
