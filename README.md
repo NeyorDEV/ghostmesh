@@ -14,8 +14,9 @@ GhostMesh connects your devices directly over UDP without relying on centralized
 
 Download the pre-compiled binaries from the **[Latest Release](https://github.com/NeyorDEV/ghostmesh/releases/latest)**:
 
-- **Desktop GUI (Windows x64):** [`ghostmesh-desktop-v0.1.0-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.0/ghostmesh-desktop-v0.1.0-windows-x64.zip) (Standalone executable `GhostMesh.exe`, zero dependencies).
-- **CLI Binary (Windows x64):** [`ghostmesh-cli-v0.1.0-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.0/ghostmesh-cli-v0.1.0-windows-x64.zip).
+- **Desktop GUI (Windows x64):** [`ghostmesh-desktop-v0.1.1-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.1/ghostmesh-desktop-v0.1.1-windows-x64.zip) (Standalone executable `GhostMesh.exe`, zero dependencies).
+- **CLI Binary (Windows x64):** [`ghostmesh-cli-v0.1.1-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.1/ghostmesh-cli-v0.1.1-windows-x64.zip).
+
 
 
 ---
