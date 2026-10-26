@@ -1,12 +1,22 @@
 # GhostMesh
 
+[![GitHub release](https://img.shields.io/github/v/release/NeyorDEV/ghostmesh?color=06b6d4)](https://github.com/NeyorDEV/ghostmesh/releases/latest)
 [![CI & Build](https://github.com/NeyorDEV/ghostmesh/actions/workflows/ci.yml/badge.svg)](https://github.com/NeyorDEV/ghostmesh/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 
 > **Decentralized, zero-config, peer-to-peer encrypted mesh overlay network.**
 
-
 GhostMesh connects your devices directly over UDP without relying on centralized relay servers. It uses modern end-to-end cryptography (Noise Protocol) and automated NAT traversal (UDP Hole Punching via public STUN) to establish resilient, low-latency tunnels across firewalls and dynamic IP addresses.
+
+---
+
+## Downloads
+
+Download the pre-compiled binaries from the **[Latest Release](https://github.com/NeyorDEV/ghostmesh/releases/latest)**:
+
+- **Desktop GUI (Windows x64):** [`ghostmesh-desktop-v0.1.0-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.0/ghostmesh-desktop-v0.1.0-windows-x64.zip) (Standalone executable `GhostMesh.exe`, zero dependencies).
+- **CLI Binary (Windows x64):** [`ghostmesh-cli-v0.1.0-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.0/ghostmesh-cli-v0.1.0-windows-x64.zip).
+
 
 ---
 
