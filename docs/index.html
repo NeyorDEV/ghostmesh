@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GhostMesh Documentation | Decentralized P2P Mesh Overlay</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Navigation Header -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="logo-icon"></div>
+      <span>GhostMesh</span>
+    </div>
+    <nav class="nav-links">
+      <a href="#quick-start">Quick Start</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#downloads">Downloads</a>
+      <a href="https://github.com/NeyorDEV/ghostmesh" target="_blank" class="btn-github">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <!-- Layout Container -->
+  <div class="layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-group">
+        <div class="sidebar-title">Getting Started</div>
+        <ul class="sidebar-menu">
+          <li><a href="#overview" class="active">Overview</a></li>
+          <li><a href="#quick-start">Quick Start</a></li>
+          <li><a href="#downloads">Downloads (GUI & CLI)</a></li>
+          <li><a href="#npm">npm / npx Package</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-title">Core Architecture</div>
+        <ul class="sidebar-menu">
+          <li><a href="#wire-format">Wire Format & Protocols</a></li>
+          <li><a href="#cryptography">Noise Protocol (Curve25519)</a></li>
+          <li><a href="#nat-traversal">STUN & Hole Punching</a></li>
+          <li><a href="#virtual-tun">Virtual Adapter (Wintun)</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-title">Reference</div>
+        <ul class="sidebar-menu">
+          <li><a href="#cli-reference">CLI Reference</a></li>
+          <li><a href="#gui-dashboard">Desktop Dashboard</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="content">
+      <!-- Hero -->
+      <section class="hero" id="overview">
+        <span class="hero-tag">Decentralized Mesh VPN</span>
+        <h1>GhostMesh Documentation</h1>
+        <p>GhostMesh is a zero-configuration, peer-to-peer encrypted mesh overlay network built with Rust and Tauri v2. It connects your devices directly over UDP across domestic NATs and firewalls without relying on any centralized data relay servers.</p>
+      </section>
+
+      <!-- Downloads -->
+      <section class="doc-section" id="downloads">
+        <h2>Downloads</h2>
+        <p>Pre-compiled standalone binaries for 64-bit Windows are available from the GitHub Releases:</p>
+
+        <div class="download-grid">
+          <div class="download-card">
+            <div>
+              <h4>Desktop GUI Dashboard</h4>
+              <p>Standalone Windows executable with dark glassmorphism dashboard and system tray companion.</p>
+            </div>
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.0/ghostmesh-desktop-v0.1.0-windows-x64.zip" class="btn-download">
+              Download Desktop GUI (2.9 MB)
+            </a>
+          </div>
+
+          <div class="download-card">
+            <div>
+              <h4>CLI Binary</h4>
+              <p>Lightweight command-line interface for servers, headless machines, and automation.</p>
+            </div>
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.1.0/ghostmesh-cli-v0.1.0-windows-x64.zip" class="btn-download">
+              Download CLI Binary (1.3 MB)
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start -->
+      <section class="doc-section" id="quick-start">
+        <h2>Quick Start</h2>
+
+        <h3>Option A: Instant execution via npx (Zero install)</h3>
+        <p>You can run GhostMesh directly in any terminal using Node.js without needing to install Rust or Cargo:</p>
+        <pre><code># On Machine A (Host)
+npx ghostmesh-cli invite
+
+# On Machine B (Guest)
+npx ghostmesh-cli join &lt;ticket&gt;</code></pre>
+
+        <h3>Option B: Building from Source</h3>
+        <p>Clone the repository and build the workspace with Cargo:</p>
+        <pre><code>git clone https://github.com/NeyorDEV/ghostmesh.git
+cd ghostmesh
+cargo build --release
+
+# Run CLI
+cargo run -p ghost-cli -- invite
+
+# Run GUI
+cargo run -p ghostmesh-gui</code></pre>
+      </section>
+
+      <!-- Core Architecture -->
+      <section class="doc-section" id="architecture">
+        <h2>Core Architecture</h2>
+
+        <div class="callout">
+          <p><strong>Zero Central Relay Principle:</strong> Unlike traditional VPNs (where all traffic flows through a single centralized server bottleneck), GhostMesh only uses public STUN servers for discovery. All actual data frames travel directly point-to-point.</p>
+        </div>
+
+        <h3 id="wire-format">1. Binary Wire Format</h3>
+        <p>Every UDP packet in GhostMesh follows a compact binary layout with a fixed 43-byte header:</p>
+        <pre><code>[0..2]   Magic Bytes (0x47, 0x4D -> "GM")
+[2]      Packet Type (0x01: STUN_PROBE, 0x02: HANDSHAKE_INIT, 0x03: HANDSHAKE_RESP, 0x04: DATA, 0x05: KEEP_ALIVE)
+[3..19]  Destination Node ID (16 bytes)
+[19..35] Source Node ID (16 bytes)
+[35..43] Sequence Number / Nonce (8 bytes Big-Endian)
+[43..]   Encrypted Payload + Poly1305 Authentication Tag (16 bytes)</code></pre>
+
+        <h3 id="cryptography">2. Noise Protocol Cryptography</h3>
+        <p>Security is enforced via mutual authentication using the <code>Noise_XX_25519_ChaChaPoly_BLAKE2s</code> pattern:</p>
+        <ul>
+          <li><strong>Key Exchange:</strong> Ephemeral & static Curve25519 keypairs.</li>
+          <li><strong>Cipher:</strong> ChaCha20-Poly1305 authenticated symmetric encryption (AEAD).</li>
+          <li><strong>Hash:</strong> BLAKE2s for transcript authentication and key derivation.</li>
+        </ul>
+
+        <h3 id="nat-traversal">3. STUN & UDP Hole Punching</h3>
+        <p>To bypass domestic routers and Carrier-Grade NAT (CGNAT):</p>
+        <ol>
+          <li>Both nodes send an RFC 5389 Binding Request to public STUN servers (<code>stun.l.google.com:19302</code>).</li>
+          <li>The router opens a reflexive mapping and reveals the external IP:Port.</li>
+          <li>When joining via an invitation ticket, both nodes fire synchronized UDP probes to each other's endpoints, allowing firewall state tables to accept bidirectional traffic.</li>
+          <li>Background keep-alive pings every 10 seconds keep NAT port mappings open indefinitely.</li>
+        </ol>
+
+        <h3 id="virtual-tun">4. Virtual Network Adapter (Wintun)</h3>
+        <p>GhostMesh instantiates a virtual Layer 3 network interface (<code>ghost0</code>) powered by Wintun on Windows. It assigns an IP address in the private mesh subnet (<code>10.42.0.0/16</code>), allowing system tools like <code>ping</code>, SSH, and file transfers to traverse the P2P mesh as if connected over a local LAN.</p>
+      </section>
+
+      <!-- CLI Reference -->
+      <section class="doc-section" id="cli-reference">
+        <h2>CLI Reference</h2>
+        <pre><code>ghostmesh keygen                    # Generate a fresh cryptographic identity keypair
+ghostmesh discover                  # Query STUN to resolve local NAT endpoint
+ghostmesh invite [--port 4242] [--ip 10.42.0.1] # Generate ticket and wait for peer
+ghostmesh join &lt;ticket&gt; [--ip 10.42.0.2]       # Join peer and negotiate UDP hole-punching
+ghostmesh up [--port 4242] [--ip 10.42.0.1]    # Run standalone background node</code></pre>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
