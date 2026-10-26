@@ -3,8 +3,9 @@ use ghost_protocol::InviteTicket;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use tauri::{Manager, State};
+use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::RwLock;
+
 
 
 pub struct GuiState {
@@ -98,8 +99,20 @@ pub fn run() {
             virtual_ip: Arc::new(RwLock::new(Some(Ipv4Addr::new(10, 42, 0, 1)))),
         })
         .setup(|app| {
+            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("GhostMesh - Encrypted Mesh Overlay")
+                .inner_size(880.0, 640.0)
+                .min_inner_size(720.0, 500.0)
+                .center()
+                .resizable(true)
+                .build()?;
+
+            let _ = window.show();
+            let _ = window.set_focus();
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+
                 match MeshEngine::bind(4242).await {
                     Ok(engine) => {
                         let arc_engine = Arc::new(engine);

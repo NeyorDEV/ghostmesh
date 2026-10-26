@@ -7,21 +7,13 @@
     "frontendDist": "../src"
   },
   "app": {
-    "windows": [
-      {
-        "title": "GhostMesh - Encrypted Mesh Overlay",
-        "width": 880,
-        "height": 640,
-        "minWidth": 720,
-        "minHeight": 500,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
+    "withGlobalTauri": true,
+    "windows": [],
     "security": {
       "csp": null
     }
   },
+
   "bundle": {
     "active": true,
     "targets": "all",
