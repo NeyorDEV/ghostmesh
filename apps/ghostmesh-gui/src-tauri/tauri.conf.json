@@ -8,11 +8,25 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [],
+    "windows": [
+      {
+        "label": "main",
+        "title": "GhostMesh - Encrypted Mesh Overlay",
+        "url": "index.html",
+        "width": 880,
+        "height": 640,
+        "minWidth": 720,
+        "minHeight": 500,
+        "center": true,
+        "resizable": true,
+        "visible": true
+      }
+    ],
     "security": {
       "csp": null
     }
   },
+
 
   "bundle": {
     "active": true,

@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#111c38" />
+      <stop offset="60%" stop-color="#080e1c" />
+      <stop offset="100%" stop-color="#03060c" />
+    </radialGradient>
+
+    <!-- Cyan Mesh Glow Gradient -->
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee" />
+      <stop offset="50%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+
+    <!-- Violet Accent Gradient -->
+    <linearGradient id="violetGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+
+    <!-- Node Glow Filter -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <filter id="glow-intense" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="28" result="blur1" />
+      <feGaussianBlur stdDeviation="12" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur1" />
+        <feMergeNode in="blur2" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bgGrad)" stroke="#06b6d4" stroke-width="8" stroke-opacity="0.4" />
+  
+  <!-- Subtle Background Grid Pattern -->
+  <g opacity="0.12" stroke="#38bdf8" stroke-width="2">
+    <line x1="160" y1="200" x2="864" y2="200" />
+    <line x1="160" y1="360" x2="864" y2="360" />
+    <line x1="160" y1="520" x2="864" y2="520" />
+    <line x1="160" y1="680" x2="864" y2="680" />
+    <line x1="160" y1="840" x2="864" y2="840" />
+
+    <line x1="200" y1="160" x2="200" y2="864" />
+    <line x1="360" y1="160" x2="360" y2="864" />
+    <line x1="512" y1="160" x2="512" y2="864" />
+    <line x1="664" y1="160" x2="664" y2="864" />
+    <line x1="824" y1="160" x2="824" y2="864" />
+  </g>
+
+  <!-- Ghost Outer Contour Body (Semi-transparent Mesh Shield) -->
+  <path d="M 512 180
+           C 340 180, 260 300, 260 480
+           C 260 620, 270 740, 260 820
+           C 290 800, 330 760, 380 810
+           C 430 860, 470 820, 512 790
+           C 554 820, 594 860, 644 810
+           C 694 760, 734 800, 764 820
+           C 754 740, 764 620, 764 480
+           C 764 300, 684 180, 512 180 Z"
+        fill="url(#violetGrad)" fill-opacity="0.12"
+        stroke="url(#cyanGrad)" stroke-width="12" stroke-linejoin="round"
+        filter="url(#glow)" />
+
+  <!-- Internal Mesh Wireframe Lines -->
+  <g stroke="#00f2fe" stroke-width="6" stroke-opacity="0.6" stroke-linecap="round">
+    <!-- Top dome lines -->
+    <line x1="512" y1="180" x2="400" y2="300" />
+    <line x1="512" y1="180" x2="624" y2="300" />
+    <line x1="400" y1="300" x2="624" y2="300" />
+
+    <!-- Head to Eye band -->
+    <line x1="400" y1="300" x2="330" y2="430" />
+    <line x1="624" y1="300" x2="694" y2="430" />
+    <line x1="400" y1="300" x2="512" y2="400" />
+    <line x1="624" y1="300" x2="512" y2="400" />
+
+    <!-- Center Chest Lattice -->
+    <line x1="330" y1="430" x2="512" y2="400" />
+    <line x1="694" y1="430" x2="512" y2="400" />
+    <line x1="330" y1="430" x2="380" y2="580" />
+    <line x1="694" y1="430" x2="644" y2="580" />
+    <line x1="512" y1="400" x2="512" y2="590" />
+    <line x1="512" y1="400" x2="380" y2="580" />
+    <line x1="512" y1="400" x2="644" y2="580" />
+
+    <!-- Lower Body Mesh to Tentacles -->
+    <line x1="380" y1="580" x2="512" y2="590" />
+    <line x1="644" y1="580" x2="512" y2="590" />
+    <line x1="380" y1="580" x2="260" y2="820" />
+    <line x1="380" y1="580" x2="380" y2="810" />
+    <line x1="512" y1="590" x2="380" y2="810" />
+    <line x1="512" y1="590" x2="512" y2="790" />
+    <line x1="512" y1="590" x2="644" y2="810" />
+    <line x1="644" y1="580" x2="644" y2="810" />
+    <line x1="644" y1="580" x2="764" y2="820" />
+  </g>
+
+  <!-- Glowing Ghost Eyes (Futuristic visor nodes) -->
+  <g filter="url(#glow-intense)">
+    <circle cx="430" cy="460" r="32" fill="#00f2fe" />
+    <circle cx="594" cy="460" r="32" fill="#00f2fe" />
+    <circle cx="430" cy="460" r="16" fill="#ffffff" />
+    <circle cx="594" cy="460" r="16" fill="#ffffff" />
+  </g>
+
+  <!-- Mesh Network Nodes (Cyan Glowing Vertices) -->
+  <g fill="#00f2fe" filter="url(#glow)">
+    <circle cx="512" cy="180" r="14" />
+    <circle cx="400" cy="300" r="12" />
+    <circle cx="624" cy="300" r="12" />
+    <circle cx="330" cy="430" r="12" />
+    <circle cx="694" cy="430" r="12" />
+    <circle cx="512" cy="400" r="14" />
+    <circle cx="380" cy="580" r="13" />
+    <circle cx="644" cy="580" r="13" />
+    <circle cx="512" cy="590" r="15" />
+    <circle cx="260" cy="820" r="11" />
+    <circle cx="380" cy="810" r="12" />
+    <circle cx="512" cy="790" r="13" />
+    <circle cx="644" cy="810" r="12" />
+    <circle cx="764" cy="820" r="11" />
+  </g>
+
+  <!-- External Satellite Nodes (Representing P2P Mesh swarm) -->
+  <g fill="#38bdf8" filter="url(#glow)" opacity="0.8">
+    <circle cx="190" cy="340" r="9" />
+    <line x1="190" y1="340" x2="260" y2="400" stroke="#38bdf8" stroke-dasharray="6,6" stroke-width="4" />
+    <circle cx="830" cy="340" r="9" />
+    <line x1="830" y1="340" x2="760" y2="400" stroke="#38bdf8" stroke-dasharray="6,6" stroke-width="4" />
+    <circle cx="180" cy="620" r="8" />
+    <line x1="180" y1="620" x2="260" y2="600" stroke="#38bdf8" stroke-dasharray="6,6" stroke-width="4" />
+    <circle cx="840" cy="620" r="8" />
+    <line x1="840" y1="620" x2="760" y2="600" stroke="#38bdf8" stroke-dasharray="6,6" stroke-width="4" />
+  </g>
+</svg>

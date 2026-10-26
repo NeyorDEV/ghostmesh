@@ -1,4 +1,10 @@
-const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : async () => {};
+function invoke(cmd, args) {
+  if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
+  return Promise.resolve(null);
+}
+
 
 // DOM Elements
 const elStatusLabel = document.getElementById('status-label');
