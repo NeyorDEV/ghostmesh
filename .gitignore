@@ -5,3 +5,8 @@ Cargo.lock
 *.pem
 .DS_Store
 Thumbs.db
+node_modules/
+packages/ghostmesh-cli/bin/*.exe
+packages/ghostmesh-cli/bin/ghost-cli
+*.tgz
+

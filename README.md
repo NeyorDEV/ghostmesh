@@ -1,6 +1,10 @@
 # GhostMesh
 
+[![CI & Build](https://github.com/NeyorDEV/ghostmesh/actions/workflows/ci.yml/badge.svg)](https://github.com/NeyorDEV/ghostmesh/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
+
 > **Decentralized, zero-config, peer-to-peer encrypted mesh overlay network.**
+
 
 GhostMesh connects your devices directly over UDP without relying on centralized relay servers. It uses modern end-to-end cryptography (Noise Protocol) and automated NAT traversal (UDP Hole Punching via public STUN) to establish resilient, low-latency tunnels across firewalls and dynamic IP addresses.
 
@@ -32,7 +36,20 @@ ghostmesh/
 
 ## Quick Start
 
+### Option A: Instant Run via npx (No Rust required)
+
+```bash
+# On Machine A (Host)
+npx ghostmesh-cli invite
+
+# On Machine B (Guest)
+npx ghostmesh-cli join <ticket>
+```
+
+### Option B: Build from source (Rust & Cargo)
+
 ### 1. Build the project
+
 ```bash
 cargo build --release
 ```

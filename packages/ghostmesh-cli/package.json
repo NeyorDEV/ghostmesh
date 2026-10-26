@@ -1,0 +1,37 @@
+{
+  "name": "ghostmesh-cli",
+  "version": "0.1.0",
+  "description": "Decentralized P2P encrypted mesh overlay CLI built with Rust",
+  "bin": {
+    "ghostmesh": "./bin/ghostmesh.js"
+  },
+  "scripts": {
+    "bundle": "node ./scripts/copy-binary.js",
+    "test": "node ./bin/ghostmesh.js --help"
+  },
+
+  "keywords": [
+    "ghostmesh",
+    "p2p",
+    "mesh",
+    "vpn",
+    "encryption",
+    "udp",
+    "hole-punching",
+    "noise-protocol",
+    "rust"
+  ],
+  "author": "NeyorDEV <mylan.perrier@etu.uca.fr>",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NeyorDEV/ghostmesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NeyorDEV/ghostmesh/issues"
+  },
+  "homepage": "https://github.com/NeyorDEV/ghostmesh#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
