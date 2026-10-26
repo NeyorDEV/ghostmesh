@@ -144,6 +144,88 @@ async fn ghostsync_get_status(state: State<'_, GuiState>) -> Result<ghost_core::
 }
 
 #[tauri::command]
+fn get_known_devices() -> Result<Vec<ghost_core::KnownPeer>, String> {
+    let cfg = ghost_core::load_config();
+    Ok(cfg.known_peers)
+}
+
+#[tauri::command]
+fn remove_known_device(node_id: String) -> Result<(), String> {
+    let mut cfg = ghost_core::load_config();
+    cfg.known_peers.retain(|p| p.node_id != node_id);
+    ghost_core::save_config(&cfg)
+}
+
+#[tauri::command]
+async fn request_device_connect(
+    target_node_id: String,
+    target_endpoint: String,
+    state: State<'_, GuiState>,
+) -> Result<(), String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e| format!("{e}"))?;
+    let dest_addr: std::net::SocketAddr = target_endpoint.parse().map_err(|e| format!("{e}"))?;
+
+    engine.add_peer(dest_node, dest_addr).await;
+    engine
+        .send_packet(dest_node, ghost_protocol::PacketType::PairRequest, b"CONNECT_REQUEST")
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_pending_connection_request(
+    state: State<'_, GuiState>,
+) -> Result<Option<ghost_core::PendingConnectionRequest>, String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let req = engine.pending_request.read().await;
+    Ok(req.clone())
+}
+
+#[tauri::command]
+async fn respond_connection_request(
+    node_id: String,
+    accept: bool,
+    state: State<'_, GuiState>,
+) -> Result<(), String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let dest_node: ghost_protocol::NodeId = node_id.parse().map_err(|e| format!("{e}"))?;
+
+    let packet_type = if accept {
+        ghost_protocol::PacketType::PairAccept
+    } else {
+        ghost_protocol::PacketType::PairReject
+    };
+
+    let _ = engine.send_packet(dest_node, packet_type, b"").await;
+
+    // Clear pending request
+    let mut req_guard = engine.pending_request.write().await;
+    *req_guard = None;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn launch_rdp(virtual_ip: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let ip = if let Some((clean_ip, _)) = virtual_ip.split_once('/') {
+            clean_ip
+        } else {
+            &virtual_ip
+        };
+        let _ = std::process::Command::new("mstsc")
+            .arg(format!("/v:{}", ip))
+            .spawn();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn ghostdrop_open_folder() -> Result<(), String> {
     let folder = ghostdrop::get_transfers_dir();
     #[cfg(target_os = "windows")]
@@ -241,7 +323,13 @@ pub fn run() {
             ghostdrop_open_folder,
             generate_ticket_qr,
             ghostsync_set_dir,
-            ghostsync_get_status
+            ghostsync_get_status,
+            get_known_devices,
+            remove_known_device,
+            request_device_connect,
+            get_pending_connection_request,
+            respond_connection_request,
+            launch_rdp
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostMesh desktop application");

@@ -1,10 +1,18 @@
+pub mod config;
 pub mod peer;
 pub mod relay;
 pub mod sync;
 
+pub use config::{load_config, save_config, AppConfig, KnownPeer};
 pub use peer::{Peer, PeerState, PeerTable};
 pub use relay::RelayClient;
 pub use sync::{GhostSyncEngine, SyncStatus};
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct PendingConnectionRequest {
+    pub node_id: String,
+    pub endpoint: String,
+}
 
 use ghost_crypto::IdentityKeypair;
 use ghost_nat::DEFAULT_STUN_SERVER;
@@ -39,12 +47,45 @@ pub struct MeshEngine {
     pub adapter: Arc<RwLock<Option<Arc<VirtualAdapter>>>>,
     pub relay: Arc<RwLock<Option<RelayClient>>>,
     pub sync: Arc<GhostSyncEngine>,
+    pub pending_request: Arc<RwLock<Option<PendingConnectionRequest>>>,
 }
 
 impl MeshEngine {
     pub async fn bind(local_port: u16) -> Result<Self, EngineError> {
-        let identity = IdentityKeypair::generate()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        let mut cfg = load_config();
+        let identity = if let (Some(priv_hex), Some(pub_hex)) = (&cfg.private_key_hex, &cfg.public_key_hex) {
+            if let (Ok(priv_b), Ok(pub_b)) = (hex::decode(priv_hex), hex::decode(pub_hex)) {
+                if priv_b.len() == 32 && pub_b.len() == 32 {
+                    let mut priv_arr = [0u8; 32];
+                    let mut pub_arr = [0u8; 32];
+                    priv_arr.copy_from_slice(&priv_b);
+                    pub_arr.copy_from_slice(&pub_b);
+                    info!("Loaded persistent cryptographic identity: NodeId {}", hex::encode(&pub_arr[..16]));
+                    IdentityKeypair::from_key_bytes(priv_arr, pub_arr)
+                } else {
+                    let gen = IdentityKeypair::generate()
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                    cfg.private_key_hex = Some(hex::encode(gen.private));
+                    cfg.public_key_hex = Some(hex::encode(gen.public));
+                    let _ = save_config(&cfg);
+                    gen
+                }
+            } else {
+                let gen = IdentityKeypair::generate()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                cfg.private_key_hex = Some(hex::encode(gen.private));
+                cfg.public_key_hex = Some(hex::encode(gen.public));
+                let _ = save_config(&cfg);
+                gen
+            }
+        } else {
+            let gen = IdentityKeypair::generate()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            cfg.private_key_hex = Some(hex::encode(gen.private));
+            cfg.public_key_hex = Some(hex::encode(gen.public));
+            let _ = save_config(&cfg);
+            gen
+        };
 
         let socket = UdpSocket::bind(format!("0.0.0.0:{local_port}")).await?;
         let socket = Arc::new(socket);
@@ -72,6 +113,7 @@ impl MeshEngine {
         let adapter = Arc::new(RwLock::new(None));
         let relay = Arc::new(RwLock::new(None));
         let sync = Arc::new(GhostSyncEngine::new());
+        let pending_request = Arc::new(RwLock::new(None));
 
         // Automatically attempt UPnP port mapping on domestic router in background
         if local_port > 0 {
@@ -91,6 +133,7 @@ impl MeshEngine {
             adapter,
             relay,
             sync,
+            pending_request,
         })
     }
 
@@ -339,6 +382,33 @@ impl MeshEngine {
                                     if let Some(adapter) = guard.as_ref() {
                                         let _ = adapter.write_packet(&packet.payload).await;
                                     }
+                                }
+
+                                PacketType::PairRequest => {
+                                    info!("Incoming connection request from {} at {}", packet.src_node, remote_addr);
+                                    let mut req_guard = self.pending_request.write().await;
+                                    *req_guard = Some(PendingConnectionRequest {
+                                        node_id: packet.src_node.to_string(),
+                                        endpoint: remote_addr.to_string(),
+                                    });
+                                }
+
+                                PacketType::PairAccept => {
+                                    info!("Connection request accepted by {} at {}", packet.src_node, remote_addr);
+                                    let peer = table.get_mut(&packet.src_node);
+                                    if let Some(p) = peer {
+                                        p.endpoint = remote_addr;
+                                        p.state = PeerState::Connected;
+                                        p.last_seen = std::time::Instant::now();
+                                    } else {
+                                        let mut new_p = Peer::new(packet.src_node, remote_addr);
+                                        new_p.state = PeerState::Connected;
+                                        table.insert(new_p);
+                                    }
+                                }
+
+                                PacketType::PairReject => {
+                                    warn!("Connection request rejected by {} at {}", packet.src_node, remote_addr);
                                 }
 
                                 PacketType::StunProbe => {}

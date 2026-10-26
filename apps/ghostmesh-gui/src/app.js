@@ -84,6 +84,9 @@ async function updatePeers() {
         <td class="font-mono">${p.endpoint}</td>
         <td><span class="${p.state === 'Connected' ? 'green-text' : 'text-muted'}">${p.state}</span></td>
         <td>${p.last_seen_secs}s ago</td>
+        <td>
+          <button class="btn-rdp" onclick="launchRdp('${p.node_id}')">Remote Desktop</button>
+        </td>
       </tr>
     `).join('');
 
@@ -319,11 +322,127 @@ btnSubmitJoin.addEventListener('click', async () => {
   }
 });
 
+// Incoming Request Alert DOM Elements
+const incomingAlert = document.getElementById('incoming-alert');
+const alertRequesterId = document.getElementById('alert-requester-id');
+const btnAcceptRequest = document.getElementById('btn-accept-request');
+const btnDeclineRequest = document.getElementById('btn-decline-request');
+const knownTbody = document.getElementById('known-tbody');
+const knownCount = document.getElementById('known-count');
+
+let activePendingRequest = null;
+
+async function updateIncomingRequests() {
+  try {
+    const req = await invoke('get_pending_connection_request');
+    if (req) {
+      activePendingRequest = req;
+      incomingAlert.style.display = 'flex';
+      alertRequesterId.textContent = `Node: ${req.node_id.substring(0, 16)}... (${req.endpoint})`;
+    } else {
+      activePendingRequest = null;
+      incomingAlert.style.display = 'none';
+    }
+  } catch (e) {
+    // Silently continue
+  }
+}
+
+btnAcceptRequest.addEventListener('click', async () => {
+  if (activePendingRequest) {
+    try {
+      await invoke('respond_connection_request', {
+        nodeId: activePendingRequest.node_id,
+        accept: true,
+      });
+      incomingAlert.style.display = 'none';
+      setTimeout(updatePeers, 400);
+      setTimeout(updateKnownDevices, 400);
+    } catch (e) {
+      alert('Accept error: ' + e);
+    }
+  }
+});
+
+btnDeclineRequest.addEventListener('click', async () => {
+  if (activePendingRequest) {
+    try {
+      await invoke('respond_connection_request', {
+        nodeId: activePendingRequest.node_id,
+        accept: false,
+      });
+      incomingAlert.style.display = 'none';
+    } catch (e) {
+      alert('Decline error: ' + e);
+    }
+  }
+});
+
+async function updateKnownDevices() {
+  try {
+    const devices = await invoke('get_known_devices');
+    if (!devices || devices.length === 0) {
+      knownCount.textContent = '0 saved';
+      knownTbody.innerHTML = `
+        <tr class="empty-row">
+          <td colspan="4">No saved devices yet. Connected machines will be remembered here for easy reconnect.</td>
+        </tr>`;
+      return;
+    }
+
+    knownCount.textContent = `${devices.length} saved`;
+    knownTbody.innerHTML = devices.map(d => `
+      <tr>
+        <td class="font-mono"><strong>${d.alias}</strong></td>
+        <td class="font-mono text-truncate" style="max-width: 140px;">${d.node_id}</td>
+        <td class="font-mono">${d.endpoint}</td>
+        <td>
+          <button class="btn-connect-sm" onclick="connectKnown('${d.node_id}', '${d.endpoint}')">Connect</button>
+          <button class="btn-forget-sm" onclick="forgetDevice('${d.node_id}')">Forget</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    // Silently continue
+  }
+}
+
+window.connectKnown = async function(nodeId, endpoint) {
+  try {
+    await invoke('request_device_connect', {
+      targetNodeId: nodeId,
+      targetEndpoint: endpoint,
+    });
+    alert('Connection request sent to ' + endpoint + '. Waiting for peer to accept.');
+  } catch (e) {
+    alert('Connection request error: ' + e);
+  }
+};
+
+window.forgetDevice = async function(nodeId) {
+  try {
+    await invoke('remove_known_device', { nodeId });
+    updateKnownDevices();
+  } catch (e) {
+    alert('Forget error: ' + e);
+  }
+};
+
+window.launchRdp = async function(nodeId) {
+  try {
+    await invoke('launch_rdp', { virtualIp: '10.42.0.1' });
+  } catch (e) {
+    alert('RDP launch error: ' + e);
+  }
+};
+
 btnRefresh.addEventListener('click', () => {
   updateStatus();
   updatePeers();
   updateTransferMonitor();
   updateSyncStatus();
+  updateKnownDevices();
+  updateIncomingRequests();
 });
 
 // Periodic polling
@@ -331,7 +450,11 @@ updateStatus();
 updatePeers();
 updateTransferMonitor();
 updateSyncStatus();
+updateKnownDevices();
+updateIncomingRequests();
 setInterval(updateStatus, 3000);
 setInterval(updatePeers, 2000);
 setInterval(updateTransferMonitor, 400);
 setInterval(updateSyncStatus, 2500);
+setInterval(updateKnownDevices, 4000);
+setInterval(updateIncomingRequests, 1500);

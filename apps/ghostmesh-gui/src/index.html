@@ -28,6 +28,21 @@
       </div>
     </header>
 
+    <!-- Incoming Request Alert Banner -->
+    <div class="incoming-alert" id="incoming-alert" style="display: none;">
+      <div class="incoming-content">
+        <div class="alert-icon">!</div>
+        <div class="alert-text">
+          <strong>Incoming Connection Request</strong>
+          <span class="font-mono text-truncate" id="alert-requester-id">Node: ...</span>
+        </div>
+      </div>
+      <div class="incoming-actions">
+        <button class="btn btn-accent" id="btn-accept-request">Accept</button>
+        <button class="btn btn-secondary" id="btn-decline-request">Decline</button>
+      </div>
+    </div>
+
     <!-- Main Grid -->
     <main class="main-content">
       <!-- Info Cards -->
@@ -82,11 +97,37 @@
                 <th>Endpoint</th>
                 <th>Connection Type</th>
                 <th>Last Seen</th>
+                <th>Control</th>
               </tr>
             </thead>
             <tbody id="peers-tbody">
               <tr class="empty-row">
-                <td colspan="4">No peers connected yet. Click "Invite Peer" or "Join Network" to establish a direct P2P link.</td>
+                <td colspan="5">No peers connected yet. Click "Invite Peer" or "Join Network" to establish a direct P2P link.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Known Devices (Saved Pairs) Section -->
+      <section class="known-devices-section" style="margin-top: 24px;">
+        <div class="section-header">
+          <h2>Known Devices (Saved Pairs)</h2>
+          <span class="text-muted font-mono" id="known-count" style="font-size: 12px;">0 saved</span>
+        </div>
+        <div class="table-container">
+          <table class="peers-table">
+            <thead>
+              <tr>
+                <th>Device Alias</th>
+                <th>Node ID</th>
+                <th>Last Known Endpoint</th>
+                <th>Authorization & Connect</th>
+              </tr>
+            </thead>
+            <tbody id="known-tbody">
+              <tr class="empty-row">
+                <td colspan="4">No saved devices yet. Connected machines will be remembered here for easy reconnect.</td>
               </tr>
             </tbody>
           </table>
