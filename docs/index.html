@@ -63,6 +63,8 @@
           <li><a href="#gui-dashboard">Desktop Dashboard (GUI)</a></li>
           <li><a href="#known-devices">Known Devices & Consent Flow</a></li>
           <li><a href="#mesh-firewall">Mesh Firewall & Permissions</a></li>
+          <li><a href="#clipboard-sync">Clipboard Sync (Presse-Papier)</a></li>
+          <li><a href="#exit-node">Exit Node Gateway (Internet Sharing)</a></li>
           <li><a href="#ghostchat">GhostChat (Encrypted Messaging)</a></li>
           <li><a href="#remote-desktop">Windows Remote Desktop (RDP)</a></li>
           <li><a href="#qr-pairing">QR Code Instant Pairing</a></li>
@@ -120,8 +122,8 @@ cargo run -p ghostmesh-gui</code></pre>
               <h4>Desktop GUI Dashboard</h4>
               <p>Standalone Windows executable with dark glassmorphism dashboard, system tray companion, and real-time latency monitor.</p>
             </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.2/ghostmesh-desktop-v0.2.2-windows-x64.zip" class="btn-download">
-              Download Desktop GUI (v0.2.2)
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.3/ghostmesh-desktop-v0.2.3-windows-x64.zip" class="btn-download">
+              Download Desktop GUI (v0.2.3)
             </a>
           </div>
 
@@ -130,8 +132,8 @@ cargo run -p ghostmesh-gui</code></pre>
               <h4>CLI Binary</h4>
               <p>Lightweight command-line interface for servers, headless Linux/Windows machines, and automation.</p>
             </div>
-            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.2/ghostmesh-cli-v0.2.2-windows-x64.zip" class="btn-download">
-              Download CLI Binary (v0.2.2)
+            <a href="https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.3/ghostmesh-cli-v0.2.3-windows-x64.zip" class="btn-download">
+              Download CLI Binary (v0.2.3)
             </a>
           </div>
         </div>
@@ -244,6 +246,34 @@ npx ghostmesh-cli discover</code></pre>
           <li><strong>RDP Toggle:</strong> Enable or forbid Remote Desktop incoming sessions from this node.</li>
           <li><strong>Drop Toggle:</strong> Permit or reject high-speed GhostDrop file streams.</li>
           <li><strong>Temporary Session:</strong> Marks the peer as an ephemeral guest; the device authorization is automatically revoked when the connection terminates.</li>
+        </ul>
+      </section>
+
+      <!-- Clipboard Sync (Presse-Papier Partagé) -->
+      <section class="doc-section" id="clipboard-sync">
+        <h2>Presse-Papier Partagé (Clipboard Sync)</h2>
+        <p>Seamlessly share copied text, code snippets, tokens, and URLs across machines without email or third-party web chats:</p>
+        <ul>
+          <li><strong>1-Click Send:</strong> In the active peers table, clicking <strong>Clip</strong> immediately pushes the contents of your local Windows clipboard to that peer.</li>
+          <li><strong>Auto-Sync Mode:</strong> Under <em>System Preferences</em>, toggling <strong>Clipboard Sync</strong> will automatically write incoming clipboard packets directly into the target machine's Windows clipboard with a discreet confirmation toast.</li>
+          <li><strong>Noise Encrypted:</strong> All clipboard data travels through packet type <code>0x0A</code>, authenticated and encrypted end-to-end.</li>
+        </ul>
+      </section>
+
+      <!-- Exit Node Gateway (Internet Sharing) -->
+      <section class="doc-section" id="exit-node">
+        <h2>Passerelle Internet (Exit Node Gateway)</h2>
+        <p>Route all non-mesh IPv4 Internet traffic through a designated remote GhostMesh node (similar to Tailscale Exit Nodes):</p>
+
+        <div class="callout">
+          <p><strong>Public Wi-Fi & Travel Protection:</strong> When working from an untrusted hotel or airport Wi-Fi, activating your home PC as an Exit Node secures all your web browsing, DNS queries, and banking traffic through your home Internet connection.</p>
+        </div>
+
+        <h3>How it Works</h3>
+        <ul>
+          <li><strong>Enable on Host:</strong> On the machine you want to use as an exit gateway, check <em>Exit Node Gateway: Allow remote mesh peers to route their Internet connection through this PC</em> in System Preferences.</li>
+          <li><strong>Activate on Client:</strong> In the Active Peers table, click <strong>Exit Node</strong>. GhostMesh injects two high-priority <code>/1</code> routes (<code>0.0.0.0/1</code> and <code>128.0.0.0/1</code>) into the Windows routing table, routing all outgoing web traffic through the encrypted virtual mesh IP (<code>10.42.X.Y</code>).</li>
+          <li><strong>1-Click Deactivation:</strong> Clicking the active <strong>Exit: ON</strong> button immediately tears down the override routes and restores direct Internet connectivity.</li>
         </ul>
       </section>
 

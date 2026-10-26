@@ -51,6 +51,15 @@ pub struct MeshEngine {
     pub sync: Arc<GhostSyncEngine>,
     pub pending_request: Arc<RwLock<Option<PendingConnectionRequest>>>,
     pub chat_messages: Arc<RwLock<Vec<ChatMessageEntry>>>,
+    pub last_clipboard: Arc<RwLock<Option<ClipboardEntry>>>,
+    pub active_exit_node: Arc<RwLock<Option<String>>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ClipboardEntry {
+    pub sender: String,
+    pub text: String,
+    pub timestamp_secs: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -138,6 +147,8 @@ impl MeshEngine {
         }
 
         let chat_messages = Arc::new(RwLock::new(Vec::new()));
+        let last_clipboard = Arc::new(RwLock::new(None));
+        let active_exit_node = Arc::new(RwLock::new(None));
 
         Ok(Self {
             identity,
@@ -149,6 +160,8 @@ impl MeshEngine {
             sync,
             pending_request,
             chat_messages,
+            last_clipboard,
+            active_exit_node,
         })
     }
 
@@ -316,6 +329,10 @@ impl MeshEngine {
         Ok(())
     }
 
+    pub async fn send_clipboard(&self, dest_node: NodeId, text: &str) -> Result<(), EngineError> {
+        self.send_packet(dest_node, PacketType::ClipboardSync, text.as_bytes()).await
+    }
+
     pub async fn start_background_tasks(self: &Arc<Self>) {
         let engine = Arc::clone(self);
         tokio::spawn(async move {
@@ -459,6 +476,26 @@ impl MeshEngine {
                                             timestamp_secs: ts,
                                         });
                                     }
+                                }
+
+                                PacketType::ClipboardSync => {
+                                    if let Ok(text) = String::from_utf8(packet.payload.to_vec()) {
+                                        info!("Clipboard received from {}: {} chars", packet.src_node, text.len());
+                                        let ts = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs();
+                                        let mut clip_guard = self.last_clipboard.write().await;
+                                        *clip_guard = Some(ClipboardEntry {
+                                            sender: packet.src_node.to_string(),
+                                            text,
+                                            timestamp_secs: ts,
+                                        });
+                                    }
+                                }
+
+                                PacketType::ExitNodeRoute => {
+                                    info!("Exit node routing notification from {}", packet.src_node);
                                 }
 
                                 PacketType::StunProbe => {}

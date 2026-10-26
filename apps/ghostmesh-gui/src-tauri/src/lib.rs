@@ -256,6 +256,130 @@ fn set_autostart(enable: bool) -> Result<(), String> {
     ghost_core::save_config(&cfg)
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ExitNodeStatus {
+    pub is_active: bool,
+    pub target_node_id: Option<String>,
+    pub target_virtual_ip: Option<String>,
+    pub allow_sharing: bool,
+}
+
+#[tauri::command]
+async fn send_clipboard_to_peer(
+    target_node_id: String,
+    text: String,
+    state: State<'_, GuiState>,
+) -> Result<(), String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e| format!("{e}"))?;
+    engine.send_clipboard(dest_node, &text).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_incoming_clipboard(
+    state: State<'_, GuiState>,
+) -> Result<Option<ghost_core::ClipboardEntry>, String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let mut clip_guard = engine.last_clipboard.write().await;
+    let item = clip_guard.take();
+    Ok(item)
+}
+
+#[tauri::command]
+fn get_auto_clipboard() -> Result<bool, String> {
+    let cfg = ghost_core::load_config();
+    Ok(cfg.auto_clipboard)
+}
+
+#[tauri::command]
+fn set_auto_clipboard(enable: bool) -> Result<(), String> {
+    let mut cfg = ghost_core::load_config();
+    cfg.auto_clipboard = enable;
+    ghost_core::save_config(&cfg)
+}
+
+#[tauri::command]
+async fn set_exit_node(
+    target_node_id: Option<String>,
+    state: State<'_, GuiState>,
+) -> Result<(), String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("route")
+            .args(["delete", "0.0.0.0", "mask", "128.0.0.0"])
+            .output();
+        let _ = std::process::Command::new("route")
+            .args(["delete", "128.0.0.0", "mask", "128.0.0.0"])
+            .output();
+
+        if let Some(ref nid_str) = target_node_id {
+            if let Ok(nid) = nid_str.parse::<ghost_protocol::NodeId>() {
+                let vip = nid.to_virtual_ip().to_string();
+                let _ = std::process::Command::new("route")
+                    .args(["add", "0.0.0.0", "mask", "128.0.0.0", &vip, "metric", "10"])
+                    .output();
+                let _ = std::process::Command::new("route")
+                    .args(["add", "128.0.0.0", "mask", "128.0.0.0", &vip, "metric", "10"])
+                    .output();
+                let _ = engine
+                    .send_packet(nid, ghost_protocol::PacketType::ExitNodeRoute, b"ROUTE_REQ")
+                    .await;
+            }
+        }
+    }
+
+    let mut exit_guard = engine.active_exit_node.write().await;
+    *exit_guard = target_node_id;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_exit_node_status(
+    state: State<'_, GuiState>,
+) -> Result<ExitNodeStatus, String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let exit_guard = engine.active_exit_node.read().await;
+    let cfg = ghost_core::load_config();
+
+    let target_vip = exit_guard.as_ref().and_then(|nid_str| {
+        nid_str
+            .parse::<ghost_protocol::NodeId>()
+            .ok()
+            .map(|nid| nid.to_virtual_ip().to_string())
+    });
+
+    Ok(ExitNodeStatus {
+        is_active: exit_guard.is_some(),
+        target_node_id: exit_guard.clone(),
+        target_virtual_ip: target_vip,
+        allow_sharing: cfg.allow_exit_node,
+    })
+}
+
+#[tauri::command]
+fn set_allow_exit_node(allow: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        if allow {
+            let _ = std::process::Command::new("powershell")
+                .args([
+                    "-Command",
+                    "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters' -Name 'IPEnableRouter' -Value 1 -ErrorAction SilentlyContinue",
+                ])
+                .output();
+        }
+    }
+    let mut cfg = ghost_core::load_config();
+    cfg.allow_exit_node = allow;
+    ghost_core::save_config(&cfg)
+}
+
 #[tauri::command]
 async fn request_device_connect(
     target_node_id: String,
@@ -446,7 +570,14 @@ pub fn run() {
             send_chat_message,
             get_chat_messages,
             get_autostart,
-            set_autostart
+            set_autostart,
+            send_clipboard_to_peer,
+            get_incoming_clipboard,
+            get_auto_clipboard,
+            set_auto_clipboard,
+            set_exit_node,
+            get_exit_node_status,
+            set_allow_exit_node
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostMesh desktop application");

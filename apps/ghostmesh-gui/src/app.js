@@ -44,6 +44,7 @@ const tmStatus = document.getElementById('tm-status');
 const tmStats = document.getElementById('tm-stats');
 
 let cachedPeers = [];
+let activeExitNode = null;
 
 async function updateStatus() {
   try {
@@ -85,8 +86,10 @@ async function updatePeers() {
         <td><span class="${p.state === 'Connected' ? 'green-text' : 'text-muted'}">${p.state}</span></td>
         <td>${p.last_seen_secs}s ago</td>
         <td>
-          <button class="btn-rdp" onclick="launchRdp('${p.node_id}')">Remote Desktop</button>
-          <button class="btn-chat" onclick="openChat('${p.node_id}')">Chat</button>
+          <button class="btn-rdp" onclick="launchRdp('${p.node_id}')" title="Windows Remote Desktop">RDP</button>
+          <button class="btn-chat" onclick="openChat('${p.node_id}')" title="Encrypted Chat">Chat</button>
+          <button class="btn-clip" onclick="sendClipboardTo('${p.node_id}')" title="Send Clipboard to Peer">Clip</button>
+          <button class="btn-exit ${activeExitNode === p.node_id ? 'active' : ''}" onclick="toggleExitNode('${p.node_id}')" title="Route all Internet through this peer">${activeExitNode === p.node_id ? 'Exit: ON' : 'Exit Node'}</button>
         </td>
       </tr>
     `).join('');
@@ -552,24 +555,134 @@ chatInputText.addEventListener('keydown', (e) => {
   }
 });
 
-// Autostart Settings
-const chkAutostart = document.getElementById('chk-autostart');
-async function initAutostart() {
+// Toast Notification Helper
+const toastAlert = document.getElementById('toast-alert');
+let toastTimer = null;
+function showToast(msg) {
+  if (toastTimer) clearTimeout(toastTimer);
+  toastAlert.textContent = msg;
+  toastAlert.style.display = 'block';
+  toastTimer = setTimeout(() => {
+    toastAlert.style.display = 'none';
+  }, 3500);
+}
+
+// Clipboard Sync Logic
+window.sendClipboardTo = async function(nodeId) {
   try {
-    const enabled = await invoke('get_autostart');
-    chkAutostart.checked = !!enabled;
+    const text = await navigator.clipboard.readText();
+    if (!text) {
+      showToast('Clipboard is empty');
+      return;
+    }
+    await invoke('send_clipboard_to_peer', {
+      targetNodeId: nodeId,
+      text: text,
+    });
+    showToast(`Clipboard sent to ${nodeId.substring(0, 8)}... (${text.length} chars)`);
   } catch (e) {
-    console.error('Autostart init error:', e);
+    showToast('Clipboard send error: ' + e);
+  }
+};
+
+async function checkIncomingClipboard() {
+  try {
+    const clip = await invoke('get_incoming_clipboard');
+    if (clip && clip.text) {
+      const autoSync = chkAutoClipboard ? chkAutoClipboard.checked : true;
+      if (autoSync) {
+        await navigator.clipboard.writeText(clip.text);
+        showToast(`Clipboard auto-synced from ${clip.sender.substring(0, 8)}... (${clip.text.length} chars)`);
+      } else {
+        showToast(`Received clipboard from ${clip.sender.substring(0, 8)}... (Auto-sync disabled)`);
+      }
+    }
+  } catch (e) {
+    // Silently continue
   }
 }
 
-chkAutostart.addEventListener('change', async function() {
+// Exit Node (Internet Gateway) Logic
+window.toggleExitNode = async function(nodeId) {
   try {
-    await invoke('set_autostart', { enable: this.checked });
+    if (activeExitNode === nodeId) {
+      await invoke('set_exit_node', { targetNodeId: null });
+      activeExitNode = null;
+      showToast('Exit Node Gateway deactivated (Direct Internet)');
+    } else {
+      await invoke('set_exit_node', { targetNodeId: nodeId });
+      activeExitNode = nodeId;
+      showToast(`Routing Internet through Exit Node ${nodeId.substring(0, 8)}...`);
+    }
+    updatePeers();
   } catch (e) {
-    alert('Failed to update startup configuration: ' + e);
+    alert('Exit Node error: ' + e);
   }
-});
+};
+
+async function updateExitNodeStatus() {
+  try {
+    const status = await invoke('get_exit_node_status');
+    if (status) {
+      activeExitNode = status.target_node_id;
+      if (chkAllowExitNode) chkAllowExitNode.checked = !!status.allow_sharing;
+    }
+  } catch (e) {
+    // Silently continue
+  }
+}
+
+// System Preferences & Settings
+const chkAutostart = document.getElementById('chk-autostart');
+const chkAutoClipboard = document.getElementById('chk-auto-clipboard');
+const chkAllowExitNode = document.getElementById('chk-allow-exit-node');
+
+async function initSettings() {
+  try {
+    const enabled = await invoke('get_autostart');
+    if (chkAutostart) chkAutostart.checked = !!enabled;
+
+    const autoClip = await invoke('get_auto_clipboard');
+    if (chkAutoClipboard) chkAutoClipboard.checked = autoClip !== false;
+
+    updateExitNodeStatus();
+  } catch (e) {
+    console.error('Settings init error:', e);
+  }
+}
+
+if (chkAutostart) {
+  chkAutostart.addEventListener('change', async function() {
+    try {
+      await invoke('set_autostart', { enable: this.checked });
+      showToast('Autostart configuration updated');
+    } catch (e) {
+      alert('Failed to update startup configuration: ' + e);
+    }
+  });
+}
+
+if (chkAutoClipboard) {
+  chkAutoClipboard.addEventListener('change', async function() {
+    try {
+      await invoke('set_auto_clipboard', { enable: this.checked });
+      showToast('Clipboard sync preference saved');
+    } catch (e) {
+      alert('Clipboard settings error: ' + e);
+    }
+  });
+}
+
+if (chkAllowExitNode) {
+  chkAllowExitNode.addEventListener('change', async function() {
+    try {
+      await invoke('set_allow_exit_node', { allow: this.checked });
+      showToast(this.checked ? 'Exit Node sharing enabled' : 'Exit Node sharing disabled');
+    } catch (e) {
+      alert('Exit node sharing error: ' + e);
+    }
+  });
+}
 
 // Auto-Updater Check
 const updateAlert = document.getElementById('update-alert');
@@ -583,7 +696,7 @@ async function checkForUpdates() {
     if (res.ok) {
       const data = await res.json();
       const latestTag = data.tag_name || '';
-      const currentVer = 'v0.2.1';
+      const currentVer = 'v0.2.2';
       if (latestTag && latestTag !== currentVer && latestTag > currentVer) {
         updateTag.textContent = latestTag;
         updateAlert.style.display = 'flex';
@@ -605,11 +718,12 @@ btnRefresh.addEventListener('click', () => {
   updateSyncStatus();
   updateKnownDevices();
   updateIncomingRequests();
+  updateExitNodeStatus();
   checkForUpdates();
 });
 
 // Initialize
-initAutostart();
+initSettings();
 checkForUpdates();
 updateStatus();
 updatePeers();
@@ -623,3 +737,4 @@ setInterval(updateTransferMonitor, 400);
 setInterval(updateSyncStatus, 2500);
 setInterval(updateKnownDevices, 4000);
 setInterval(updateIncomingRequests, 1500);
+setInterval(checkIncomingClipboard, 1500);

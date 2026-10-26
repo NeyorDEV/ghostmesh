@@ -96,6 +96,8 @@ pub enum PacketType {
     PairAccept = 0x07,
     PairReject = 0x08,
     ChatMessage = 0x09,
+    ClipboardSync = 0x0A,
+    ExitNodeRoute = 0x0B,
 }
 
 impl TryFrom<u8> for PacketType {
@@ -112,6 +114,8 @@ impl TryFrom<u8> for PacketType {
             0x07 => Ok(Self::PairAccept),
             0x08 => Ok(Self::PairReject),
             0x09 => Ok(Self::ChatMessage),
+            0x0A => Ok(Self::ClipboardSync),
+            0x0B => Ok(Self::ExitNodeRoute),
             other => Err(ProtocolError::UnknownPacketType(other)),
         }
     }

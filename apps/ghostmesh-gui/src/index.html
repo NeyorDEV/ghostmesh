@@ -17,7 +17,7 @@
         <div class="logo-orb"></div>
         <div class="brand-text">
           <h1>GhostMesh</h1>
-          <span class="version-tag">v0.2.2 • P2P Overlay</span>
+          <span class="version-tag">v0.2.3 • P2P Overlay</span>
         </div>
       </div>
       <div class="header-status">
@@ -229,15 +229,26 @@
       <!-- System Preferences & Autostart Section -->
       <section class="settings-section" style="margin-top: 24px;">
         <div class="section-header">
-          <h2>System Preferences</h2>
+          <h2>System & Network Preferences</h2>
         </div>
-        <div class="ghostdrop-card">
+        <div class="ghostdrop-card" style="display: flex; flex-direction: column; gap: 14px;">
           <label class="toggle-control">
             <input type="checkbox" id="chk-autostart">
             <span class="toggle-label">Start GhostMesh automatically on Windows login (Runs silently in system tray)</span>
           </label>
+          <label class="toggle-control">
+            <input type="checkbox" id="chk-auto-clipboard" checked>
+            <span class="toggle-label">Clipboard Sync: Automatically synchronize clipboard text across connected mesh peers</span>
+          </label>
+          <label class="toggle-control">
+            <input type="checkbox" id="chk-allow-exit-node">
+            <span class="toggle-label">Exit Node Gateway: Allow remote mesh peers to route their Internet connection through this PC</span>
+          </label>
         </div>
       </section>
+
+      <!-- Toast Alert for Clipboard & System Notifications -->
+      <div class="toast-alert" id="toast-alert" style="display: none;"></div>
     </main>
 
     <!-- Modal: GhostChat -->

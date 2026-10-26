@@ -8,6 +8,10 @@ pub struct AppConfig {
     pub known_peers: Vec<KnownPeer>,
     #[serde(default)]
     pub autostart: bool,
+    #[serde(default)]
+    pub allow_exit_node: bool,
+    #[serde(default = "default_true")]
+    pub auto_clipboard: bool,
 }
 
 fn default_true() -> bool {
