@@ -1,0 +1,15 @@
+[package]
+name = "ghost-tun"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cross-platform virtual network adapter (TUN/Wintun) and IP routing for GhostMesh"
+
+[dependencies]
+ghost-protocol = { path = "../ghost-protocol" }
+tun-rs = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }

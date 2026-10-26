@@ -1,0 +1,13 @@
+{
+  "name": "ghostmesh-gui",
+  "version": "0.1.0",
+  "description": "GhostMesh Desktop Dashboard & Tray Companion",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

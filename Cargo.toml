@@ -4,9 +4,13 @@ members = [
     "crates/ghost-protocol",
     "crates/ghost-crypto",
     "crates/ghost-nat",
+    "crates/ghost-tun",
     "crates/ghost-core",
     "crates/ghost-cli",
+    "apps/ghostmesh-gui/src-tauri",
 ]
+
+
 
 [workspace.package]
 version = "0.1.0"
@@ -30,4 +34,6 @@ snow = "0.9"
 hex = "0.4"
 base64 = "0.22"
 serde_json = "1.0"
+tun-rs = { version = "2.8", features = ["async_tokio"] }
+
 

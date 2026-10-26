@@ -3,10 +3,10 @@ use ghost_core::MeshEngine;
 use ghost_crypto::IdentityKeypair;
 use ghost_nat::DEFAULT_STUN_SERVER;
 use ghost_protocol::{InviteTicket, NodeId, PacketType};
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(name = "ghostmesh")]
@@ -35,6 +35,9 @@ enum Commands {
     Invite {
         #[arg(short, long, default_value_t = 4242)]
         port: u16,
+        /// Virtual mesh IP to assign (e.g. 10.42.0.1)
+        #[arg(long)]
+        ip: Option<Ipv4Addr>,
     },
 
     /// Join a remote peer using an invitation ticket (UDP hole punching)
@@ -43,12 +46,18 @@ enum Commands {
         ticket: String,
         #[arg(short, long, default_value_t = 0)]
         port: u16,
+        /// Virtual mesh IP to assign (e.g. 10.42.0.2)
+        #[arg(long)]
+        ip: Option<Ipv4Addr>,
     },
 
     /// Run the GhostMesh node engine
     Up {
         #[arg(short, long, default_value_t = 4242)]
         port: u16,
+        /// Virtual mesh IP to assign (e.g. 10.42.0.1)
+        #[arg(long)]
+        ip: Option<Ipv4Addr>,
     },
 
     /// Ping a remote peer directly over UDP
@@ -60,6 +69,21 @@ enum Commands {
         #[arg(short, long, default_value_t = 4242)]
         local_port: u16,
     },
+}
+
+async fn try_setup_tun(engine: &Arc<MeshEngine>, virtual_ip: Option<Ipv4Addr>) {
+    if let Some(ip) = virtual_ip {
+        let netmask = Ipv4Addr::new(255, 255, 0, 0);
+        match engine.enable_virtual_interface(ip, netmask).await {
+            Ok(_) => {
+                println!("🌐 Virtual Adapter Active: ghost0 -> {}/16", ip);
+            }
+            Err(e) => {
+                warn!("Could not activate virtual TUN device: {e}");
+                println!("⚠️ Note: Run terminal as Administrator to enable Wintun virtual network adapter.");
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -104,8 +128,10 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Commands::Invite { port } => {
+        Commands::Invite { port, ip } => {
             let engine = Arc::new(MeshEngine::bind(port).await?);
+            try_setup_tun(&engine, ip).await;
+
             let ticket = engine.create_invite();
             let ticket_str = ticket.to_ticket_string();
 
@@ -113,6 +139,9 @@ async fn main() -> anyhow::Result<()> {
             println!("────────────────────────────────────────────────────────────────────────────");
             println!("Node ID        : {}", engine.node_id());
             println!("Public Endpoint: {}", engine.public_addr);
+            if let Some(vip) = ip {
+                println!("Mesh Virtual IP: {} (10.42.0.0/16)", vip);
+            }
             println!("\n📋 Share this ticket with your peer:");
             println!("\x1b[1;36m{}\x1b[0m", ticket_str);
             println!("────────────────────────────────────────────────────────────────────────────");
@@ -130,7 +159,7 @@ async fn main() -> anyhow::Result<()> {
             info!("Shutting down invite listener.");
         }
 
-        Commands::Join { ticket, port } => {
+        Commands::Join { ticket, port, ip } => {
             let parsed_ticket: InviteTicket = ticket.parse()
                 .map_err(|e| anyhow::anyhow!("Invalid invite ticket: {e}"))?;
 
@@ -141,6 +170,11 @@ async fn main() -> anyhow::Result<()> {
             println!("────────────────────────────────────────────────────────────────────────────");
 
             let engine = Arc::new(MeshEngine::bind(port).await?);
+            try_setup_tun(&engine, ip).await;
+
+            // Map target peer's default virtual IP if known (e.g. 10.42.0.1 for host)
+            engine.map_peer_virtual_ip(parsed_ticket.node_id, Ipv4Addr::new(10, 42, 0, 1)).await;
+
             let engine_recv = Arc::clone(&engine);
             tokio::spawn(async move {
                 engine_recv.run_receive_loop().await;
@@ -155,14 +189,19 @@ async fn main() -> anyhow::Result<()> {
             info!("Exiting GhostMesh.");
         }
 
-        Commands::Up { port } => {
+        Commands::Up { port, ip } => {
             info!("Starting GhostMesh daemon on port {port}...");
             let engine = Arc::new(MeshEngine::bind(port).await?);
+            try_setup_tun(&engine, ip).await;
+
             println!("\n👻 GhostMesh Node Running");
             println!("──────────────────────────────────────────────");
             println!("Node ID        : {}", engine.node_id());
             println!("Public Endpoint: {}", engine.public_addr);
             println!("Local Port     : {port}");
+            if let Some(vip) = ip {
+                println!("Mesh Virtual IP: {} (10.42.0.0/16)", vip);
+            }
             println!("──────────────────────────────────────────────");
             println!("Press Ctrl+C to terminate.\n");
 

@@ -3,13 +3,12 @@
   "version": "0.1.0",
   "description": "Decentralized P2P encrypted mesh overlay CLI built with Rust",
   "bin": {
-    "ghostmesh": "./bin/ghostmesh.js"
+    "ghostmesh": "bin/ghostmesh.js"
   },
   "scripts": {
     "bundle": "node ./scripts/copy-binary.js",
     "test": "node ./bin/ghostmesh.js --help"
   },
-
   "keywords": [
     "ghostmesh",
     "p2p",

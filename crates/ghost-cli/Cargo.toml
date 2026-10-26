@@ -10,7 +10,9 @@ description = "GhostMesh CLI client"
 ghost-protocol = { path = "../ghost-protocol" }
 ghost-crypto = { path = "../ghost-crypto" }
 ghost-nat = { path = "../ghost-nat" }
+ghost-tun = { path = "../ghost-tun" }
 ghost-core = { path = "../ghost-core" }
+
 tokio = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }

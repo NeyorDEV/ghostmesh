@@ -5,7 +5,9 @@ pub use peer::{Peer, PeerState, PeerTable};
 use ghost_crypto::IdentityKeypair;
 use ghost_nat::DEFAULT_STUN_SERVER;
 use ghost_protocol::{InviteTicket, NodeId, Packet, PacketType};
-use std::net::SocketAddr;
+use ghost_tun::{Ipv4Header, VirtualAdapter};
+
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -21,6 +23,8 @@ pub enum EngineError {
     Nat(#[from] ghost_nat::NatError),
     #[error("Protocol error: {0}")]
     Protocol(#[from] ghost_protocol::ProtocolError),
+    #[error("TUN error: {0}")]
+    Tun(#[from] ghost_tun::TunError),
 }
 
 pub struct MeshEngine {
@@ -28,6 +32,7 @@ pub struct MeshEngine {
     pub socket: Arc<UdpSocket>,
     pub public_addr: SocketAddr,
     pub peers: Arc<RwLock<PeerTable>>,
+    pub adapter: Arc<RwLock<Option<Arc<VirtualAdapter>>>>,
 }
 
 impl MeshEngine {
@@ -58,12 +63,14 @@ impl MeshEngine {
         };
 
         let peers = Arc::new(RwLock::new(PeerTable::new()));
+        let adapter = Arc::new(RwLock::new(None));
 
         Ok(Self {
             identity,
             socket,
             public_addr,
             peers,
+            adapter,
         })
     }
 
@@ -81,6 +88,64 @@ impl MeshEngine {
         info!("Added peer {node_id} at {endpoint}");
     }
 
+    pub async fn enable_virtual_interface(
+        self: &Arc<Self>,
+        virtual_ip: Ipv4Addr,
+        netmask: Ipv4Addr,
+    ) -> Result<Arc<VirtualAdapter>, EngineError> {
+        let adapter = Arc::new(VirtualAdapter::create("ghost0", virtual_ip, netmask)?);
+        {
+            let mut guard = self.adapter.write().await;
+            *guard = Some(Arc::clone(&adapter));
+        }
+
+        // Spawn TUN reader loop
+        let engine = Arc::clone(self);
+        let adapter_read = Arc::clone(&adapter);
+        tokio::spawn(async move {
+            let mut buf = [0u8; 65535];
+            loop {
+                match adapter_read.read_packet(&mut buf).await {
+                    Ok(len) => {
+                        let packet_bytes = &buf[..len];
+                        match Ipv4Header::parse(packet_bytes) {
+                            Ok(header) => {
+                                let target_node = {
+                                    let routes = adapter_read.routes.read().await;
+                                    routes.get_node_by_ip(&header.dest)
+                                };
+
+                                if let Some(dest_node) = target_node {
+                                    let _ = engine
+                                        .send_packet(dest_node, PacketType::Data, packet_bytes)
+                                        .await;
+                                }
+                            }
+                            Err(_) => {
+                                // Ignore non-IPv4 or malformed packets from OS
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("TUN read error: {e}");
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(adapter)
+    }
+
+    pub async fn map_peer_virtual_ip(&self, node_id: NodeId, virtual_ip: Ipv4Addr) {
+        let guard = self.adapter.read().await;
+        if let Some(adapter) = guard.as_ref() {
+            let mut routes = adapter.routes.write().await;
+            routes.insert(virtual_ip, node_id);
+            info!("Mapped peer {node_id} to virtual mesh IP {virtual_ip}");
+        }
+    }
+
     pub async fn join_ticket(self: &Arc<Self>, ticket: InviteTicket) -> Result<(), EngineError> {
         let peer = Peer::new(ticket.node_id, ticket.endpoint)
             .with_public_key(ticket.public_key);
@@ -95,7 +160,6 @@ impl MeshEngine {
         tokio::spawn(async move {
             let mut attempts = 0;
             while attempts < 20 {
-                // Check if already connected
                 let is_connected = {
                     let table = engine.peers.read().await;
                     table.get(&ticket.node_id).map(|p| p.state == PeerState::Connected).unwrap_or(false)
@@ -106,7 +170,6 @@ impl MeshEngine {
                     break;
                 }
 
-                // Send HandshakeInit probe
                 let _ = engine
                     .send_packet(ticket.node_id, PacketType::HandshakeInit, engine.identity.public.as_slice())
                     .await;
@@ -196,7 +259,6 @@ impl MeshEngine {
                                     }
 
                                     drop(table);
-                                    // Reply with HandshakeResp
                                     let _ = self
                                         .send_packet(
                                             packet.src_node,
@@ -225,11 +287,11 @@ impl MeshEngine {
                                 }
 
                                 PacketType::Data => {
-                                    info!(
-                                        "📦 Received Data ({} bytes) from {}",
-                                        packet.payload.len(),
-                                        packet.src_node
-                                    );
+                                    // Forward incoming raw IP packet directly to local TUN device
+                                    let guard = self.adapter.read().await;
+                                    if let Some(adapter) = guard.as_ref() {
+                                        let _ = adapter.write_packet(&packet.payload).await;
+                                    }
                                 }
 
                                 PacketType::StunProbe => {}

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GhostMesh Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-orb"></div>
+        <div class="brand-text">
+          <h1>GhostMesh</h1>
+          <span class="version-tag">v0.1.0 • P2P Overlay</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <div class="status-badge" id="status-indicator">
+          <span class="status-dot"></span>
+          <span id="status-label">Initializing...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="main-content">
+      <!-- Info Cards -->
+      <section class="cards-grid">
+        <div class="card">
+          <div class="card-title">Virtual Network</div>
+          <div class="card-value font-mono" id="val-vip">10.42.0.1/16</div>
+          <div class="card-sub">Interface: <span class="accent-text">ghost0</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Public Endpoint (STUN)</div>
+          <div class="card-value font-mono" id="val-endpoint">Resolving...</div>
+          <div class="card-sub">UDP NAT Hole Punching: <span class="green-text">Active</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Node Identifier</div>
+          <div class="card-value font-mono text-truncate" id="val-nodeid">Loading...</div>
+          <div class="card-sub">Crypto: <span class="accent-text">Noise_XX (Curve25519)</span></div>
+        </div>
+      </section>
+
+      <!-- Action Bar -->
+      <section class="action-bar">
+        <button class="btn btn-primary" id="btn-invite">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          Invite Peer
+        </button>
+        <button class="btn btn-secondary" id="btn-join">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Join Network
+        </button>
+        <div class="peers-counter">
+          Peers: <span id="peers-count" class="font-mono">0</span>
+        </div>
+      </section>
+
+      <!-- Peers Table -->
+      <section class="peers-section">
+        <div class="section-header">
+          <h2>Direct P2P Mesh Links</h2>
+          <button class="btn-refresh" id="btn-refresh" title="Refresh">↻</button>
+        </div>
+        <div class="table-container">
+          <table class="peers-table">
+            <thead>
+              <tr>
+                <th>Node ID</th>
+                <th>Endpoint</th>
+                <th>Connection Type</th>
+                <th>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody id="peers-tbody">
+              <tr class="empty-row">
+                <td colspan="4">No peers connected yet. Click "Invite Peer" or "Join Network" to establish a direct P2P link.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal: Invite Ticket -->
+    <div class="modal-overlay" id="modal-invite">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Invitation Ticket</h3>
+          <button class="modal-close" data-close="modal-invite">&times;</button>
+        </div>
+        <p class="modal-desc">Share this encrypted pairing ticket with the remote machine to negotiate direct UDP hole-punching:</p>
+        <div class="ticket-box font-mono" id="ticket-text">Generating...</div>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="btn-copy-ticket">Copy Ticket</button>
+          <button class="btn btn-secondary" data-close="modal-invite">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Join Peer -->
+    <div class="modal-overlay" id="modal-join">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Connect to Remote Peer</h3>
+          <button class="modal-close" data-close="modal-join">&times;</button>
+        </div>
+        <p class="modal-desc">Paste the invitation ticket starting with <code>gm1_</code> provided by the peer:</p>
+        <textarea class="input-ticket font-mono" id="input-join-ticket" placeholder="gm1_eyJub2RlX2lkIjoi..." rows="3"></textarea>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="btn-submit-join">Connect</button>
+          <button class="btn btn-secondary" data-close="modal-join">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

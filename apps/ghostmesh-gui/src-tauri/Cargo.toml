@@ -1,0 +1,28 @@
+[package]
+name = "ghostmesh-gui"
+version = "0.1.0"
+edition = "2021"
+authors = ["NeyorDEV <mylan.perrier@etu.uca.fr>"]
+license = "MIT OR Apache-2.0"
+description = "Desktop Tray and GUI dashboard for GhostMesh"
+
+[lib]
+name = "ghostmesh_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.1", features = [] }
+
+[dependencies]
+ghost-protocol = { path = "../../../crates/ghost-protocol" }
+ghost-crypto = { path = "../../../crates/ghost-crypto" }
+ghost-nat = { path = "../../../crates/ghost-nat" }
+ghost-tun = { path = "../../../crates/ghost-tun" }
+ghost-core = { path = "../../../crates/ghost-core" }
+
+tauri = { version = "2.1", features = ["tray-icon"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"

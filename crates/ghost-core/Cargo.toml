@@ -10,7 +10,9 @@ description = "Peer state machine, routing table and async event engine for Ghos
 ghost-protocol = { path = "../ghost-protocol" }
 ghost-crypto = { path = "../ghost-crypto" }
 ghost-nat = { path = "../ghost-nat" }
+ghost-tun = { path = "../ghost-tun" }
 tokio = { workspace = true }
+
 thiserror = { workspace = true }
 tracing = { workspace = true }
 bytes = { workspace = true }
