@@ -39,6 +39,18 @@ Download the pre-compiled binaries from the **[Latest Release](https://github.co
 
 ---
 
+## Desktop Dashboard Highlights (GUI)
+
+- **Known Devices with Mutual Consent:** Save paired computers in local configuration (`config.json`). Clicking **Connect** sends an explicit authorization request that the remote user can **Accept** or **Decline**.
+- **Per-Device Mesh Firewall:** Granular permission switches per saved device: toggle **RDP** access, **GhostDrop** file reception, or enforce **Temporary Sessions** that auto-revoke upon disconnection.
+- **GhostChat (P2P Encrypted Messaging):** Send instant messages directly over the peer-to-peer authenticated Noise channel. Zero centralized servers, ephemeral memory storage.
+- **GhostDrop (Resume & Auto-Folder Zip):** High-speed direct streaming over port 4243. Automatically resumes broken transfers from the last byte offset and packages folders into zip archives on the fly.
+- **Windows Remote Desktop (RDP in 1-Click):** Launch native Windows `mstsc.exe` connected directly to the remote peer's virtual mesh IP (`10.42.X.Y`) without third-party remote desktop software.
+- **Silent Windows Autostart:** One-click setting in the dashboard to register GhostMesh in Windows startup, launching silently into the system tray.
+- **Integrated Update Checker:** Automatic GitHub releases notification banner in the header with 1-click update link.
+
+---
+
 ## Architecture (Cargo Workspace)
 
 ```text

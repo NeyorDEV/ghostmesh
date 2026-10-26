@@ -68,6 +68,7 @@
           <li><a href="#qr-pairing">QR Code Instant Pairing</a></li>
           <li><a href="#ghostdrop">GhostDrop (P2P File Transfer)</a></li>
           <li><a href="#ghostsync">GhostSync (Folder Sync)</a></li>
+          <li><a href="#autostart">Windows Autostart & Systray</a></li>
           <li><a href="#cli-reference">CLI Reference</a></li>
           <li><a href="#troubleshooting">Firewalls & Troubleshooting</a></li>
         </ul>
@@ -286,20 +287,37 @@ npx ghostmesh-cli discover</code></pre>
 
       <!-- GhostDrop File Transfer -->
       <section class="doc-section" id="ghostdrop">
-        <h2>GhostDrop - Built-in P2P File Transfer</h2>
+        <h2>GhostDrop - Built-in P2P File Transfer with Resume & Folders</h2>
         <p>GhostDrop is GhostMesh's native all-in-one file transfer engine. Unlike cloud storage or local-only utilities like AirDrop, GhostDrop transfers files directly peer-to-peer across the internet at the maximum physical speed of your connection:</p>
 
         <div class="callout">
           <p><strong>All-In-One Convenience:</strong> Zero third-party tools needed. No need to configure Windows SMB shares, open firewall ports, or install LocalSend. GhostDrop runs directly inside the GhostMesh interface and CLI.</p>
         </div>
 
+        <h3>Key Capabilities</h3>
+        <ul>
+          <li><strong>Interrupted Transfer Resumption (Resume):</strong> If a network blip occurs during a large transfer (e.g. 50 GB), GhostDrop automatically negotiates byte offsets and continues right where it was paused without re-sending completed chunks.</li>
+          <li><strong>On-the-Fly Folder Zipping:</strong> Selecting an entire directory automatically compresses it on the fly into an archive, streams it to the remote peer, and cleans up temporary buffers.</li>
+          <li><strong>High-Speed Async Streaming:</strong> Utilizes 128 KB chunk buffers over TCP port <code>4243</code> with live MB/s telemetry and progress bars.</li>
+        </ul>
+
         <h3>How it Works</h3>
         <ol>
           <li><strong>Select a Connected Peer:</strong> Choose from the active peers listed in your mesh network.</li>
-          <li><strong>Pick Any File:</strong> Drag and drop or browse for any file (archives, video files, datasets). There is <strong>no file size limit</strong>.</li>
+          <li><strong>Pick Any File or Folder:</strong> Drag and drop or browse for any file or folder. There is <strong>no file size limit</strong>.</li>
           <li><strong>Stream with GhostDrop:</strong> High-throughput asynchronous streaming sends encrypted 128 KB chunks directly to the recipient over port <code>4243</code>.</li>
           <li><strong>Auto-Save to Transfers:</strong> The receiving peer automatically saves files to <code>Downloads/GhostMesh-Transfers/</code> and displays real-time MB/s throughput.</li>
         </ol>
+      </section>
+
+      <!-- System Preferences & Windows Autostart -->
+      <section class="doc-section" id="autostart">
+        <h2>Windows Autostart & Silent Systray Mode</h2>
+        <p>Ensure your machine remains accessible for Remote Desktop or continuous folder synchronization without requiring manual application launch after every reboot:</p>
+        <ul>
+          <li><strong>One-Click Startup Toggle:</strong> Located under the <em>System Preferences</em> section of the dashboard, checking the autostart option configures the native Windows Run registry key.</li>
+          <li><strong>Silent Background Launch:</strong> Windows launches GhostMesh with the <code>--silent</code> flag, suppressing window popups and keeping the engine running discreetly in the Windows notification area (system tray).</li>
+        </ul>
       </section>
 
       <!-- GhostSync Continuous Folder Sync -->
