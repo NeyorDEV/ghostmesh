@@ -70,7 +70,9 @@
       <section class="peers-section">
         <div class="section-header">
           <h2>Direct P2P Mesh Links</h2>
-          <button class="btn-refresh" id="btn-refresh" title="Refresh">↻</button>
+          <button class="btn-refresh" id="btn-refresh" title="Refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
         </div>
         <div class="table-container">
           <table class="peers-table">
@@ -94,9 +96,9 @@
       <!-- GhostDrop P2P File Transfer Section -->
       <section class="ghostdrop-section">
         <div class="section-header">
-          <h2>GhostDrop • Direct P2P File Transfer</h2>
+          <h2>GhostDrop - Direct P2P File Transfer</h2>
           <button class="btn-ghost" id="btn-open-transfers" title="Open Transfers Folder">
-            📁 Open Received Folder
+            Open Received Folder
           </button>
         </div>
 
@@ -110,7 +112,7 @@
             </div>
 
             <div class="input-group file-picker-group">
-              <label>Select File (No size limit • High-speed P2P stream)</label>
+              <label>Select File (No size limit - High-speed P2P stream)</label>
               <div class="file-picker-row">
                 <input type="text" id="gd-filepath-input" placeholder="e.g. C:\Files\video.mp4 or click Browse" class="font-mono">
                 <input type="file" id="gd-file-elem" style="display: none;">
@@ -120,7 +122,7 @@
 
             <div class="ghostdrop-actions">
               <button class="btn btn-accent" id="btn-start-transfer" disabled>
-                🚀 Send with GhostDrop
+                Send with GhostDrop
               </button>
             </div>
           </div>

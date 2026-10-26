@@ -82,7 +82,7 @@ async function updatePeers() {
       <tr>
         <td class="font-mono text-truncate" style="max-width: 180px;">${p.node_id}</td>
         <td class="font-mono">${p.endpoint}</td>
-        <td><span class="${p.state === 'Connected' ? 'green-text' : 'text-muted'}">● ${p.state}</span></td>
+        <td><span class="${p.state === 'Connected' ? 'green-text' : 'text-muted'}">${p.state}</span></td>
         <td>${p.last_seen_secs}s ago</td>
       </tr>
     `).join('');
@@ -165,7 +165,7 @@ btnStartTransfer.addEventListener('click', async () => {
   } catch (e) {
     alert('GhostDrop error: ' + e);
   } finally {
-    btnStartTransfer.textContent = '🚀 Send with GhostDrop';
+    btnStartTransfer.textContent = 'Send with GhostDrop';
     checkTransferReady();
   }
 });
@@ -189,7 +189,7 @@ async function updateTransferMonitor() {
 
     if (st.is_active || st.is_completed) {
       transferMonitor.style.display = 'block';
-      tmFilename.textContent = (st.direction === 'sending' ? '📤 Sending: ' : '📥 Receiving: ') + st.filename;
+      tmFilename.textContent = (st.direction === 'sending' ? 'Sending: ' : 'Receiving: ') + st.filename;
       tmSpeed.textContent = st.speed_mbps > 0 ? `${st.speed_mbps.toFixed(1)} MB/s` : '-- MB/s';
       tmFill.style.width = `${Math.min(100, Math.max(0, st.percent))}%`;
       tmStatus.textContent = st.status_message;

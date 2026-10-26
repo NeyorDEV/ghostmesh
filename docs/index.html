@@ -223,6 +223,8 @@ npx ghostmesh-cli discover</code></pre>
 ghostmesh discover                  # Query STUN to resolve local NAT endpoint
 ghostmesh invite [--port 4242] [--ip 10.42.0.1] # Generate ticket and wait for peer
 ghostmesh join &lt;ticket&gt; [--ip 10.42.0.2]       # Join peer and negotiate UDP hole-punching
+ghostmesh send &lt;target&gt; &lt;file&gt;      # Send file via GhostDrop P2P high-speed streaming
+ghostmesh receive [--dir &lt;path&gt;]    # Receive files via GhostDrop listener daemon
 ghostmesh up [--port 4242] [--ip 10.42.0.1]    # Run standalone background node</code></pre>
       </section>
 
