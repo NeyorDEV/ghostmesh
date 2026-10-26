@@ -143,6 +143,9 @@ pub fn run() {
         })
         .setup(|app| {
             if let Some(win) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = win.set_icon(icon.clone());
+                }
                 let _ = win.show();
                 let _ = win.unminimize();
                 let _ = win.set_focus();
