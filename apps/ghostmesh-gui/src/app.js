@@ -203,17 +203,83 @@ async function updateTransferMonitor() {
   }
 }
 
+// QR & GhostSync DOM Elements
+const qrWrapper = document.getElementById('qr-wrapper');
+const ticketQr = document.getElementById('ticket-qr');
+const btnToggleQr = document.getElementById('btn-toggle-qr');
+const syncDirInput = document.getElementById('sync-dir-input');
+const btnSaveSyncDir = document.getElementById('btn-save-sync-dir');
+const syncStatusMsg = document.getElementById('sync-status-msg');
+const syncBadgeLabel = document.getElementById('sync-badge-label');
+const syncStatusBadge = document.getElementById('sync-status-badge');
+
 // Modal handling
 btnInvite.addEventListener('click', async () => {
   modalInvite.classList.add('active');
   elTicketText.textContent = 'Generating encrypted ticket...';
+  ticketQr.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Generating QR Code...</div>';
   try {
     const ticket = await invoke('create_invite');
     elTicketText.textContent = ticket || 'gm1_simulated_ticket_for_testing';
+
+    if (ticket) {
+      try {
+        const qrSvg = await invoke('generate_ticket_qr', { ticket });
+        if (qrSvg) {
+          ticketQr.innerHTML = qrSvg;
+        }
+      } catch (err) {
+        ticketQr.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">QR Code unavailable</div>';
+      }
+    }
   } catch (e) {
     elTicketText.textContent = 'Failed to generate ticket: ' + e;
   }
 });
+
+btnToggleQr.addEventListener('click', () => {
+  if (qrWrapper.style.display === 'none') {
+    qrWrapper.style.display = 'flex';
+  } else {
+    qrWrapper.style.display = 'none';
+  }
+});
+
+// GhostSync Handling
+btnSaveSyncDir.addEventListener('click', async () => {
+  const dir = syncDirInput.value.trim();
+  if (!dir) return;
+
+  btnSaveSyncDir.disabled = true;
+  btnSaveSyncDir.textContent = 'Saving...';
+  try {
+    await invoke('ghostsync_set_dir', { dir });
+    updateSyncStatus();
+  } catch (e) {
+    alert('GhostSync error: ' + e);
+  } finally {
+    btnSaveSyncDir.disabled = false;
+    btnSaveSyncDir.textContent = 'Set Folder';
+  }
+});
+
+async function updateSyncStatus() {
+  try {
+    const st = await invoke('ghostsync_get_status');
+    if (st) {
+      syncStatusMsg.textContent = st.status_message;
+      if (st.is_active && st.watched_dir) {
+        syncBadgeLabel.textContent = 'Active Sync';
+        syncStatusBadge.style.color = '#10b981';
+      } else {
+        syncBadgeLabel.textContent = 'Idle';
+        syncStatusBadge.style.color = 'var(--text-muted)';
+      }
+    }
+  } catch (e) {
+    // Silently continue
+  }
+}
 
 btnJoin.addEventListener('click', () => {
   elInputTicket.value = '';
@@ -257,12 +323,15 @@ btnRefresh.addEventListener('click', () => {
   updateStatus();
   updatePeers();
   updateTransferMonitor();
+  updateSyncStatus();
 });
 
 // Periodic polling
 updateStatus();
 updatePeers();
 updateTransferMonitor();
+updateSyncStatus();
 setInterval(updateStatus, 3000);
 setInterval(updatePeers, 2000);
 setInterval(updateTransferMonitor, 400);
+setInterval(updateSyncStatus, 2500);

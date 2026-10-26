@@ -89,6 +89,18 @@ enum Commands {
         dir: Option<String>,
     },
 
+    /// Continuously watch and synchronize a local folder with connected peers
+    Sync {
+        /// Local folder path to watch and synchronize
+        dir: String,
+        /// Optional target peer address to sync with
+        #[arg(short, long)]
+        target: Option<String>,
+        /// GhostDrop port (default: 4243)
+        #[arg(short, long, default_value_t = DEFAULT_GHOSTDROP_PORT)]
+        port: u16,
+    },
+
     /// Ping a remote peer directly over UDP
     Ping {
         #[arg(short, long)]
@@ -435,6 +447,28 @@ async fn main() -> anyhow::Result<()> {
                     let avg = (transferred as f64 / 1_000_000.0) / elapsed;
                     println!("[OK] Finished receiving '{}' in {:.1}s (avg {:.1} MB/s). Saved to {:?}", safe_fn, elapsed, avg, dest);
                 });
+            }
+        }
+
+        Commands::Sync { dir, target, port: _ } => {
+            let sync_engine = ghost_core::GhostSyncEngine::new();
+            sync_engine.set_watched_directory(&dir).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            println!("\n[GHOSTSYNC] Real-time folder synchronization active");
+            println!("----------------------------------------------------------------------------");
+            println!("Watching folder : {}", dir);
+            if let Some(ref t) = target {
+                println!("Target peer     : {}", t);
+            }
+            println!("Monitoring file modifications... (Press Ctrl+C to terminate)\n");
+
+            let mut interval = tokio::time::interval(Duration::from_secs(2));
+            loop {
+                interval.tick().await;
+                let changed = sync_engine.scan_and_detect_changes().await;
+                for file_path in changed {
+                    println!("[SYNC] File changed: {:?} (Ready for P2P sync)", file_path);
+                }
             }
         }
 

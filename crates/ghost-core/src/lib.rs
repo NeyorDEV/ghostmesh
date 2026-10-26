@@ -1,6 +1,10 @@
 pub mod peer;
+pub mod relay;
+pub mod sync;
 
 pub use peer::{Peer, PeerState, PeerTable};
+pub use relay::RelayClient;
+pub use sync::{GhostSyncEngine, SyncStatus};
 
 use ghost_crypto::IdentityKeypair;
 use ghost_nat::DEFAULT_STUN_SERVER;
@@ -33,6 +37,8 @@ pub struct MeshEngine {
     pub public_addr: SocketAddr,
     pub peers: Arc<RwLock<PeerTable>>,
     pub adapter: Arc<RwLock<Option<Arc<VirtualAdapter>>>>,
+    pub relay: Arc<RwLock<Option<RelayClient>>>,
+    pub sync: Arc<GhostSyncEngine>,
 }
 
 impl MeshEngine {
@@ -64,6 +70,18 @@ impl MeshEngine {
 
         let peers = Arc::new(RwLock::new(PeerTable::new()));
         let adapter = Arc::new(RwLock::new(None));
+        let relay = Arc::new(RwLock::new(None));
+        let sync = Arc::new(GhostSyncEngine::new());
+
+        // Automatically attempt UPnP port mapping on domestic router in background
+        if local_port > 0 {
+            tokio::spawn(async move {
+                match ghost_nat::forward_port_upnp(local_port, local_port).await {
+                    Ok(_) => info!("UPnP: UDP port {local_port} automatically mapped on router"),
+                    Err(e) => warn!("UPnP mapping skipped or unavailable: {e}"),
+                }
+            });
+        }
 
         Ok(Self {
             identity,
@@ -71,6 +89,8 @@ impl MeshEngine {
             public_addr,
             peers,
             adapter,
+            relay,
+            sync,
         })
     }
 
@@ -202,7 +222,18 @@ impl MeshEngine {
                 payload.to_vec(),
             );
             let encoded = packet.encode();
-            self.socket.send_to(&encoded, target_addr).await?;
+
+            if target_addr.ip().is_unspecified() {
+                // Outbound UDP blocked or 0.0.0.0: route via TCP/HTTPS fallback relay
+                let guard = self.relay.read().await;
+                if let Some(relay_client) = guard.as_ref() {
+                    let _ = relay_client.send_relayed_packet(&packet).await;
+                } else {
+                    warn!("Target peer has unspecified endpoint and no relay client is configured");
+                }
+            } else {
+                self.socket.send_to(&encoded, target_addr).await?;
+            }
         } else {
             warn!("Peer {dest_node} not found in peer table");
         }
@@ -240,11 +271,27 @@ impl MeshEngine {
                     let raw = &buf[..len];
                     match Packet::decode(raw) {
                         Ok(packet) => {
+                            // Multi-hop Mesh Routing: Forward packet if not destined for this node
+                            if packet.dest_node != self.node_id() {
+                                let table = self.peers.read().await;
+                                if let Some(target_peer) = table.get(&packet.dest_node) {
+                                    if target_peer.state == PeerState::Connected {
+                                        info!(
+                                            "Mesh Forwarder: routing packet (type {:?}) from {} towards {}",
+                                            packet.packet_type, packet.src_node, packet.dest_node
+                                        );
+                                        let encoded = packet.encode();
+                                        let _ = self.socket.send_to(&encoded, target_peer.endpoint).await;
+                                        continue;
+                                    }
+                                }
+                            }
+
                             let mut table = self.peers.write().await;
                             match packet.packet_type {
                                 PacketType::HandshakeInit => {
                                     info!(
-                                        "⚡ Received HandshakeInit from {} at {}",
+                                        "Received HandshakeInit from {} at {}",
                                         packet.src_node, remote_addr
                                     );
                                     let peer = table.get_mut(&packet.src_node);
@@ -270,7 +317,7 @@ impl MeshEngine {
 
                                 PacketType::HandshakeResp => {
                                     info!(
-                                        "🎉 Received HandshakeResp from {} at {}! Direct connection established.",
+                                        "Received HandshakeResp from {} at {}! Direct connection established.",
                                         packet.src_node, remote_addr
                                     );
                                     if let Some(p) = table.get_mut(&packet.src_node) {

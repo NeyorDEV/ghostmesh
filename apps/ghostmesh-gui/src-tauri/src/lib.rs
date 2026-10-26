@@ -115,6 +115,35 @@ async fn ghostdrop_get_status(
 }
 
 #[tauri::command]
+fn generate_ticket_qr(ticket: String) -> Result<String, String> {
+    use qrcode::QrCode;
+    use qrcode::render::svg;
+
+    let code = QrCode::new(ticket.as_bytes()).map_err(|e| e.to_string())?;
+    let svg = code
+        .render::<svg::Color>()
+        .min_dimensions(180, 180)
+        .dark_color(svg::Color("#06b6d4"))
+        .light_color(svg::Color("#050811"))
+        .build();
+    Ok(svg)
+}
+
+#[tauri::command]
+async fn ghostsync_set_dir(dir: String, state: State<'_, GuiState>) -> Result<(), String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    engine.sync.set_watched_directory(&dir).await
+}
+
+#[tauri::command]
+async fn ghostsync_get_status(state: State<'_, GuiState>) -> Result<ghost_core::SyncStatus, String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    Ok(engine.sync.get_status().await)
+}
+
+#[tauri::command]
 async fn ghostdrop_open_folder() -> Result<(), String> {
     let folder = ghostdrop::get_transfers_dir();
     #[cfg(target_os = "windows")]
@@ -178,6 +207,16 @@ pub fn run() {
 
                         arc_engine.start_background_tasks().await;
 
+                        // Start periodic GhostSync change detector
+                        let sync_engine = Arc::clone(&arc_engine.sync);
+                        tokio::spawn(async move {
+                            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+                            loop {
+                                interval.tick().await;
+                                let _ = sync_engine.scan_and_detect_changes().await;
+                            }
+                        });
+
                         // Start GhostDrop TCP transfer listener on port 4243
                         let transfer_status_clone = Arc::clone(&state.transfer_status);
                         tokio::spawn(async move {
@@ -199,7 +238,10 @@ pub fn run() {
             get_peers,
             ghostdrop_send,
             ghostdrop_get_status,
-            ghostdrop_open_folder
+            ghostdrop_open_folder,
+            generate_ticket_qr,
+            ghostsync_set_dir,
+            ghostsync_get_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running GhostMesh desktop application");

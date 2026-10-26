@@ -12,6 +12,7 @@ ghost-crypto = { path = "../ghost-crypto" }
 ghost-nat = { path = "../ghost-nat" }
 ghost-tun = { path = "../ghost-tun" }
 tokio = { workspace = true }
+serde = { workspace = true }
 
 thiserror = { workspace = true }
 tracing = { workspace = true }

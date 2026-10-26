@@ -104,3 +104,40 @@ fn parse_stun_response(data: &[u8], expected_tx_id: &[u8; 12]) -> Result<SocketA
 
     Err(NatError::InvalidResponse("No XOR-MAPPED-ADDRESS found in STUN response".into()))
 }
+
+/// Attempts to automatically forward a local port on the domestic router using UPnP / IGD.
+pub async fn forward_port_upnp(local_port: u16, external_port: u16) -> Result<(), String> {
+    use igd::aio::search_gateway;
+    use igd::PortMappingProtocol;
+    use std::net::SocketAddrV4;
+
+    // Detect local network IPv4 address by probing routing table
+    let probe_socket = tokio::net::UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = probe_socket.connect("1.1.1.1:80").await;
+    let local_ip = match probe_socket.local_addr() {
+        Ok(SocketAddr::V4(addr)) => *addr.ip(),
+        _ => return Err("Could not detect local IPv4 address".into()),
+    };
+
+    let local_socket = SocketAddrV4::new(local_ip, local_port);
+    let gateway = search_gateway(Default::default())
+        .await
+        .map_err(|e| format!("UPnP search failed: {e}"))?;
+
+    gateway
+        .add_port(
+            PortMappingProtocol::UDP,
+            external_port,
+            local_socket,
+            3600, // 1 hour lease
+            "GhostMesh P2P Overlay",
+        )
+        .await
+        .map_err(|e| format!("UPnP port mapping failed: {e}"))?;
+
+    tracing::info!("UPnP successfully mapped external UDP port {external_port} to {local_socket}");
+    Ok(())
+}
+

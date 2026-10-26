@@ -143,6 +143,34 @@
           </div>
         </div>
       </section>
+
+      <!-- GhostSync Continuous Folder Sync Section -->
+      <section class="ghostsync-section">
+        <div class="section-header">
+          <h2>GhostSync - Continuous Folder Synchronization</h2>
+          <span class="status-badge" id="sync-status-badge">
+            <span class="status-dot"></span>
+            <span id="sync-badge-label">Idle</span>
+          </span>
+        </div>
+
+        <div class="ghostdrop-card">
+          <p class="section-desc">Designate a local directory to automatically synchronize new and modified files across connected peers in real time:</p>
+          <div class="ghostdrop-controls">
+            <div class="input-group">
+              <label for="sync-dir-input">Local Sync Folder</label>
+              <div class="file-picker-row">
+                <input type="text" id="sync-dir-input" placeholder="e.g. C:\Users\mylan\GhostSync" class="font-mono">
+                <button class="btn btn-secondary" id="btn-save-sync-dir">Set Folder</button>
+              </div>
+            </div>
+
+            <div class="sync-stats-row">
+              <span id="sync-status-msg" class="text-muted">No folder configured</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Modal: Invite Ticket -->
@@ -152,9 +180,16 @@
           <h3>Invitation Ticket</h3>
           <button class="modal-close" data-close="modal-invite">&times;</button>
         </div>
-        <p class="modal-desc">Share this encrypted pairing ticket with the remote machine to negotiate direct UDP hole-punching:</p>
+        <p class="modal-desc">Share this encrypted pairing ticket or scan the QR Code on another machine to establish a direct tunnel:</p>
+        
+        <!-- QR Code Container -->
+        <div class="qr-wrapper" id="qr-wrapper">
+          <div id="ticket-qr" class="ticket-qr"></div>
+        </div>
+
         <div class="ticket-box font-mono" id="ticket-text">Generating...</div>
         <div class="modal-actions">
+          <button class="btn btn-secondary" id="btn-toggle-qr">Toggle QR Code</button>
           <button class="btn btn-primary" id="btn-copy-ticket">Copy Ticket</button>
           <button class="btn btn-secondary" data-close="modal-invite">Close</button>
         </div>
