@@ -114,43 +114,13 @@ fn record_known_peer(node_id: &str, endpoint: &str) {
 }
 
 impl MeshEngine {
-    pub async fn bind(local_port: u16) -> Result<Self, EngineError> {
-        let mut cfg = load_config();
-        let identity = if let (Some(priv_hex), Some(pub_hex)) = (&cfg.private_key_hex, &cfg.public_key_hex) {
-            if let (Ok(priv_b), Ok(pub_b)) = (hex::decode(priv_hex), hex::decode(pub_hex)) {
-                if priv_b.len() == 32 && pub_b.len() == 32 {
-                    let mut priv_arr = [0u8; 32];
-                    let mut pub_arr = [0u8; 32];
-                    priv_arr.copy_from_slice(&priv_b);
-                    pub_arr.copy_from_slice(&pub_b);
-                    info!("Loaded persistent cryptographic identity: NodeId {}", hex::encode(&pub_arr[..16]));
-                    IdentityKeypair::from_key_bytes(priv_arr, pub_arr)
-                } else {
-                    let gen = IdentityKeypair::generate()
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-                    cfg.private_key_hex = Some(hex::encode(gen.private));
-                    cfg.public_key_hex = Some(hex::encode(gen.public));
-                    let _ = save_config(&cfg);
-                    gen
-                }
-            } else {
-                let gen = IdentityKeypair::generate()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-                cfg.private_key_hex = Some(hex::encode(gen.private));
-                cfg.public_key_hex = Some(hex::encode(gen.public));
-                let _ = save_config(&cfg);
-                gen
-            }
-        } else {
-            let gen = IdentityKeypair::generate()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            cfg.private_key_hex = Some(hex::encode(gen.private));
-            cfg.public_key_hex = Some(hex::encode(gen.public));
-            let _ = save_config(&cfg);
-            gen
-        };
+    pub async fn bind_ephemeral(local_port: u16) -> Result<Self, EngineError> {
+        let identity = IdentityKeypair::generate()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        Self::bind_with_identity(local_port, identity).await
+    }
 
-        // Try primary port, then progressive fallbacks (+2, +4, +6) or dynamic port 0
+    pub async fn bind_with_identity(local_port: u16, identity: IdentityKeypair) -> Result<Self, EngineError> {
         let ports_to_try = if local_port == 0 {
             vec![0]
         } else {
@@ -179,6 +149,136 @@ impl MeshEngine {
         let socket = Arc::new(socket);
 
         info!("Local UDP socket bound on port {actual_port}");
+
+        let public_addr = match ghost_nat::discover_public_endpoint(
+            &socket,
+            DEFAULT_STUN_SERVER,
+            Duration::from_secs(3),
+        )
+        .await
+        {
+            Ok(addr) => {
+                info!("Public endpoint discovered via STUN: {addr}");
+                addr
+            }
+            Err(e) => {
+                warn!("STUN discovery failed ({e}), falling back to local socket addr");
+                socket.local_addr()?
+            }
+        };
+
+        let peers = Arc::new(RwLock::new(PeerTable::new()));
+        let adapter = Arc::new(RwLock::new(None));
+        let relay = Arc::new(RwLock::new(None));
+        let sync = Arc::new(GhostSyncEngine::new());
+        let pending_request = Arc::new(RwLock::new(None));
+
+        if actual_port > 0 {
+            tokio::spawn(async move {
+                match ghost_nat::forward_port_upnp(actual_port, actual_port).await {
+                    Ok(_) => info!("UPnP: UDP port {actual_port} automatically mapped on router"),
+                    Err(e) => warn!("UPnP mapping skipped or unavailable: {e}"),
+                }
+            });
+        }
+
+        let chat_messages = Arc::new(RwLock::new(Vec::new()));
+        let last_clipboard = Arc::new(RwLock::new(None));
+        let active_exit_node = Arc::new(RwLock::new(None));
+
+        Ok(Self {
+            identity,
+            socket,
+            public_addr,
+            peers,
+            adapter,
+            relay,
+            sync,
+            pending_request,
+            chat_messages,
+            last_clipboard,
+            active_exit_node,
+        })
+    }
+
+    pub async fn bind(local_port: u16) -> Result<Self, EngineError> {
+        // Try primary port, then progressive fallbacks (+2, +4, +6) or dynamic port 0
+        let ports_to_try = if local_port == 0 {
+            vec![0]
+        } else {
+            vec![local_port, local_port + 2, local_port + 4, local_port + 6, 0]
+        };
+
+        let mut bound_socket = None;
+        let mut actual_port = local_port;
+        let mut is_secondary = false;
+
+        for (idx, p) in ports_to_try.iter().enumerate() {
+            match UdpSocket::bind(format!("0.0.0.0:{p}")).await {
+                Ok(s) => {
+                    actual_port = s.local_addr()?.port();
+                    bound_socket = Some(s);
+                    if idx > 0 {
+                        is_secondary = true;
+                    }
+                    break;
+                }
+                Err(e) => {
+                    warn!("UDP port {p} unavailable ({e}), trying next fallback port...");
+                }
+            }
+        }
+
+        let socket = bound_socket.ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::AddrInUse, "No available UDP port found")
+        })?;
+        let socket = Arc::new(socket);
+
+        info!("Local UDP socket bound on port {actual_port} (secondary={is_secondary})");
+
+        let mut cfg = load_config();
+        let identity = if !is_secondary {
+            if let (Some(priv_hex), Some(pub_hex)) = (&cfg.private_key_hex, &cfg.public_key_hex) {
+                if let (Ok(priv_b), Ok(pub_b)) = (hex::decode(priv_hex), hex::decode(pub_hex)) {
+                    if priv_b.len() == 32 && pub_b.len() == 32 {
+                        let mut priv_arr = [0u8; 32];
+                        let mut pub_arr = [0u8; 32];
+                        priv_arr.copy_from_slice(&priv_b);
+                        pub_arr.copy_from_slice(&pub_b);
+                        info!("Loaded persistent cryptographic identity: NodeId {}", hex::encode(&pub_arr[..16]));
+                        IdentityKeypair::from_key_bytes(priv_arr, pub_arr)
+                    } else {
+                        let gen = IdentityKeypair::generate()
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                        cfg.private_key_hex = Some(hex::encode(gen.private));
+                        cfg.public_key_hex = Some(hex::encode(gen.public));
+                        let _ = save_config(&cfg);
+                        gen
+                    }
+                } else {
+                    let gen = IdentityKeypair::generate()
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                    cfg.private_key_hex = Some(hex::encode(gen.private));
+                    cfg.public_key_hex = Some(hex::encode(gen.public));
+                    let _ = save_config(&cfg);
+                    gen
+                }
+            } else {
+                let gen = IdentityKeypair::generate()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                cfg.private_key_hex = Some(hex::encode(gen.private));
+                cfg.public_key_hex = Some(hex::encode(gen.public));
+                let _ = save_config(&cfg);
+                gen
+            }
+        } else {
+            // Secondary instance on the same PC: generate an independent ephemeral identity
+            // so local multi-window instances have distinct NodeIds and can pair with each other!
+            let gen = IdentityKeypair::generate()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            info!("Secondary instance: generated ephemeral NodeId {}", hex::encode(&gen.public[..16]));
+            gen
+        };
 
         let public_addr = match ghost_nat::discover_public_endpoint(
             &socket,
@@ -249,6 +349,12 @@ impl MeshEngine {
         info!("Added peer {node_id} at {endpoint}");
     }
 
+    pub async fn remove_peer(&self, node_id: NodeId) {
+        let mut table = self.peers.write().await;
+        table.remove(&node_id);
+        info!("Removed peer {node_id}");
+    }
+
     pub async fn enable_virtual_interface(
         self: &Arc<Self>,
         virtual_ip: Ipv4Addr,
@@ -308,6 +414,12 @@ impl MeshEngine {
     }
 
     pub async fn join_ticket(self: &Arc<Self>, ticket: InviteTicket) -> Result<(), EngineError> {
+        if ticket.node_id == self.node_id() {
+            return Err(EngineError::Protocol(ghost_protocol::ProtocolError::BufferError(
+                "Cannot join your own invite ticket".into(),
+            )));
+        }
+
         let all_endpoints = ticket.all_endpoints();
         let primary_endpoint = all_endpoints.first().copied().unwrap_or(ticket.endpoint);
 
@@ -452,7 +564,12 @@ impl MeshEngine {
                     let raw = &buf[..len];
                     match Packet::decode(raw) {
                         Ok(packet) => {
-                            // Multi-hop Mesh Routing: Forward packet if not destined for this node
+                            // 1. Ignore any packet from ourselves (loopback reflection)
+                            if packet.src_node == self.node_id() {
+                                continue;
+                            }
+
+                            // 2. Multi-hop Mesh Routing: Forward packet if not destined for this node
                             if packet.dest_node != self.node_id() {
                                 let table = self.peers.read().await;
                                 if let Some(target_peer) = table.get(&packet.dest_node) {
@@ -463,9 +580,10 @@ impl MeshEngine {
                                         );
                                         let encoded = packet.encode();
                                         let _ = self.socket.send_to(&encoded, target_peer.endpoint).await;
-                                        continue;
                                     }
                                 }
+                                // Never process packets destined for another node locally
+                                continue;
                             }
 
                             let mut table = self.peers.write().await;
@@ -614,8 +732,11 @@ impl MeshEngine {
                     }
                 }
                 Err(e) => {
-                    error!("Socket recv error: {e}");
-                    break;
+                    // On Windows, ICMP Port Unreachable returns WSAECONNRESET (10054).
+                    // In connectionless UDP, candidate probing causes transient errors that must NEVER break the loop!
+                    warn!("Socket recv error (non-fatal, continuing): {e}");
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    continue;
                 }
             }
         }

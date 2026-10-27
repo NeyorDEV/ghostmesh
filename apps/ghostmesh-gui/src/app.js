@@ -65,6 +65,30 @@ async function updateStatus() {
   }
 }
 
+function formatLastSeen(secs) {
+  if (secs < 5) return 'just now';
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+async function disconnectPeer(nodeId) {
+  if (!confirm(`Are you sure you want to disconnect peer ${nodeId.substring(0, 10)}...?`)) {
+    return;
+  }
+  try {
+    await invoke('disconnect_peer', { nodeId });
+    await updatePeers();
+    await updateStatus();
+  } catch (err) {
+    alert('Failed to disconnect: ' + err);
+  }
+}
+
 async function updatePeers() {
   try {
     const peers = await invoke('get_peers');
@@ -73,7 +97,7 @@ async function updatePeers() {
     if (!peers || peers.length === 0) {
       elPeersTbody.innerHTML = `
         <tr class="empty-row">
-          <td colspan="4">No peers connected yet. Click "Invite Peer" or "Join Network" to establish a direct P2P link.</td>
+          <td colspan="5">No peers connected yet. Click "Invite Peer" or "Join Network" to establish a direct P2P link.</td>
         </tr>`;
       syncPeerSelect([]);
       return;
@@ -84,12 +108,13 @@ async function updatePeers() {
         <td class="font-mono text-truncate" style="max-width: 180px;">${p.node_id}</td>
         <td class="font-mono">${p.endpoint}</td>
         <td><span class="${p.state === 'Connected' ? 'green-text' : 'text-muted'}">${p.state}</span></td>
-        <td>${p.last_seen_secs}s ago</td>
+        <td>${formatLastSeen(p.last_seen_secs)}</td>
         <td>
           <button class="btn-rdp" onclick="launchRdp('${p.node_id}')" title="Windows Remote Desktop">RDP</button>
           <button class="btn-chat" onclick="openChat('${p.node_id}')" title="Encrypted Chat">Chat</button>
           <button class="btn-clip" onclick="sendClipboardTo('${p.node_id}')" title="Send Clipboard to Peer">Clip</button>
           <button class="btn-exit ${activeExitNode === p.node_id ? 'active' : ''}" onclick="toggleExitNode('${p.node_id}')" title="Route all Internet through this peer">${activeExitNode === p.node_id ? 'Exit: ON' : 'Exit Node'}</button>
+          <button class="btn-disconnect" onclick="disconnectPeer('${p.node_id}')" title="Disconnect and remove peer">Disconnect</button>
         </td>
       </tr>
     `).join('');
@@ -696,7 +721,7 @@ async function checkForUpdates() {
     if (res.ok) {
       const data = await res.json();
       const latestTag = data.tag_name || '';
-      const currentVer = 'v0.2.4';
+      const currentVer = 'v0.2.5';
       if (latestTag && latestTag !== currentVer && latestTag > currentVer) {
         updateTag.textContent = latestTag;
         updateAlert.style.display = 'flex';

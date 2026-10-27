@@ -6,8 +6,8 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn test_two_nodes_direct_pairing() {
-    // 1. Bind Alice on local port 15001
-    let alice = Arc::new(MeshEngine::bind(15001).await.expect("Failed to bind Alice"));
+    // 1. Bind Alice on local port 15001 with ephemeral identity
+    let alice = Arc::new(MeshEngine::bind_ephemeral(15001).await.expect("Failed to bind Alice"));
     let mut alice_ticket = alice.create_invite();
     // For local test, override public endpoint to localhost to avoid loopback NAT hairpinning
     alice_ticket.endpoint = "127.0.0.1:15001".parse().unwrap();
@@ -18,9 +18,9 @@ async fn test_two_nodes_direct_pairing() {
         alice_clone.run_receive_loop().await;
     });
 
-    // 2. Bob parses Alice's ticket and joins from port 15002
+    // 2. Bob parses Alice's ticket and joins from port 15002 with independent ephemeral identity
     let parsed_ticket: InviteTicket = ticket_str.parse().expect("Failed to parse ticket");
-    let bob = Arc::new(MeshEngine::bind(15002).await.expect("Failed to bind Bob"));
+    let bob = Arc::new(MeshEngine::bind_ephemeral(15002).await.expect("Failed to bind Bob"));
 
     let bob_clone = Arc::clone(&bob);
     tokio::spawn(async move {
@@ -48,8 +48,8 @@ async fn test_two_nodes_direct_pairing() {
 
 #[tokio::test]
 async fn test_pairing_with_unreachable_wan_and_lan_candidates() {
-    // 1. Bind Alice on local port 15003
-    let alice = Arc::new(MeshEngine::bind(15003).await.expect("Failed to bind Alice"));
+    // 1. Bind Alice on local port 15003 with ephemeral identity
+    let alice = Arc::new(MeshEngine::bind_ephemeral(15003).await.expect("Failed to bind Alice"));
     let mut alice_ticket = alice.create_invite();
     // Simulate a public WAN IP that drops traffic (no NAT hairpinning)
     alice_ticket.endpoint = "198.51.100.1:4242".parse().unwrap();
@@ -62,9 +62,9 @@ async fn test_pairing_with_unreachable_wan_and_lan_candidates() {
         alice_clone.run_receive_loop().await;
     });
 
-    // 2. Bob parses Alice's ticket and joins from port 15004
+    // 2. Bob parses Alice's ticket and joins from port 15004 with independent ephemeral identity
     let parsed_ticket: InviteTicket = ticket_str.parse().expect("Failed to parse ticket");
-    let bob = Arc::new(MeshEngine::bind(15004).await.expect("Failed to bind Bob"));
+    let bob = Arc::new(MeshEngine::bind_ephemeral(15004).await.expect("Failed to bind Bob"));
 
     let bob_clone = Arc::clone(&bob);
     tokio::spawn(async move {

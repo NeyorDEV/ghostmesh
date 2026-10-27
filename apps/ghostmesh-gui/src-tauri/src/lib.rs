@@ -66,8 +66,21 @@ async fn join_peer(ticket: String, state: State<'_, GuiState>) -> Result<String,
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
 
+    if parsed.node_id == engine.node_id() {
+        return Err("Cannot join your own invite ticket. Paste this ticket into another GhostMesh instance on another device.".into());
+    }
+
     engine.join_ticket(parsed).await.map_err(|e| e.to_string())?;
     Ok("Hole-punching probes dispatched".into())
+}
+
+#[tauri::command]
+async fn disconnect_peer(node_id: String, state: State<'_, GuiState>) -> Result<(), String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let target: ghost_protocol::NodeId = node_id.parse().map_err(|e| format!("{e}"))?;
+    engine.remove_peer(target).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -553,6 +566,7 @@ pub fn run() {
             get_node_status,
             create_invite,
             join_peer,
+            disconnect_peer,
             get_peers,
             ghostdrop_send,
             ghostdrop_get_status,

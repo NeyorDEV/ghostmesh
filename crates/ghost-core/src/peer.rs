@@ -66,6 +66,10 @@ impl PeerTable {
         self.peers.insert(peer.node_id, peer);
     }
 
+    pub fn remove(&mut self, node_id: &NodeId) -> Option<Peer> {
+        self.peers.remove(node_id)
+    }
+
     pub fn get(&self, node_id: &NodeId) -> Option<&Peer> {
         self.peers.get(node_id)
     }

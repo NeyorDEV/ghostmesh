@@ -1,4 +1,5 @@
 /target
+/build-output
 **/*.rs.bk
 Cargo.lock
 *.key
