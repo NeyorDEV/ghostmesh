@@ -12,10 +12,13 @@ GhostMesh connects your devices directly over UDP without relying on centralized
 
 ## Downloads
 
-Download the pre-compiled binaries from the **[Latest Release](https://github.com/NeyorDEV/ghostmesh/releases/latest)**:
+Téléchargez les exécutables autonomes directement depuis la **[Dernière Release (v0.2.6)](https://github.com/NeyorDEV/ghostmesh/releases/latest)** :
 
-- **Desktop GUI (Windows x64):** [`ghostmesh-desktop-v0.2.3-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.3/ghostmesh-desktop-v0.2.3-windows-x64.zip) (Standalone executable `GhostMesh.exe`, zero dependencies).
-- **CLI Binary (Windows x64):** [`ghostmesh-cli-v0.2.3-windows-x64.zip`](https://github.com/NeyorDEV/ghostmesh/releases/download/v0.2.3/ghostmesh-cli-v0.2.3-windows-x64.zip).
+- **`GhostMesh.exe` (Recommandé - Application Bureau avec Interface Graphique) :**
+  - Application complète avec interface visuelle (tableau de bord, QR code, gestion des pairs, RDP en 1 clic, chat et transferts de fichiers).
+  - À double-cliquer pour lancer l'application immédiatement sans installation.
+- **`ghost.exe` (Ligne de commande - CLI / Headless) :**
+  - Binaire console destiné aux terminaux (PowerShell, CMD, bash), serveurs sans écran ou scripts automatisés (`ghost up`, `ghost status`, `ghost invite`).
 
 ---
 
