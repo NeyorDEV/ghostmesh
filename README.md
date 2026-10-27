@@ -14,10 +14,10 @@ GhostMesh connects your devices directly over UDP without relying on centralized
 
 Téléchargez les exécutables autonomes directement depuis la **[Dernière Release (v0.2.6)](https://github.com/NeyorDEV/ghostmesh/releases/latest)** :
 
-- **`GhostMesh.exe` (Recommandé - Application Bureau avec Interface Graphique) :**
+- **`ghostmesh-gui.exe` (Application Bureau avec Interface Graphique) :**
   - Application complète avec interface visuelle (tableau de bord, QR code, gestion des pairs, RDP en 1 clic, chat et transferts de fichiers).
   - À double-cliquer pour lancer l'application immédiatement sans installation.
-- **`ghost.exe` (Ligne de commande - CLI / Headless) :**
+- **`ghostmesh-cli.exe` (Ligne de commande - CLI / Console) :**
   - Binaire console destiné aux terminaux (PowerShell, CMD, bash), serveurs sans écran ou scripts automatisés (`ghost up`, `ghost status`, `ghost invite`).
 
 ---
