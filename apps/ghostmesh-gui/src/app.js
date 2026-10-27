@@ -133,13 +133,13 @@ async function updatePeers() {
         <td class="font-mono">${p.endpoint}</td>
         <td><span class="${p.state.includes('Connected') ? 'green-text' : 'text-muted'}">${p.state}</span></td>
         <td>${formatLastSeen(p.last_seen_secs)}</td>
-        <td>
+        <td><div class="peer-actions">
           <button class="btn-rdp" onclick="launchRdp('${p.node_id}')" title="Windows Remote Desktop">RDP</button>
           <button class="btn-chat" onclick="openChat('${p.node_id}')" title="Encrypted Chat">Chat</button>
           <button class="btn-clip" onclick="sendClipboardTo('${p.node_id}')" title="Send Clipboard to Peer">Clip</button>
           <button class="btn-exit ${activeExitNode === p.node_id ? 'active' : ''}" onclick="toggleExitNode('${p.node_id}')" title="Route all Internet through this peer">${activeExitNode === p.node_id ? 'Exit: ON' : 'Exit Node'}</button>
           <button class="btn-disconnect" onclick="disconnectPeer('${p.node_id}')" title="Disconnect and remove peer">Disconnect</button>
-        </td>
+        </div></td>
       </tr>
     `).join('');
 
