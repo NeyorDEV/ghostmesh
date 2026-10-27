@@ -131,7 +131,7 @@ async function updatePeers() {
       <tr>
         <td class="font-mono text-truncate" style="max-width: 180px;">${p.node_id}</td>
         <td class="font-mono">${p.endpoint}</td>
-        <td><span class="${p.state === 'Connected' ? 'green-text' : 'text-muted'}">${p.state}</span></td>
+        <td><span class="${p.state.includes('Connected') ? 'green-text' : 'text-muted'}">${p.state}</span></td>
         <td>${formatLastSeen(p.last_seen_secs)}</td>
         <td>
           <button class="btn-rdp" onclick="launchRdp('${p.node_id}')" title="Windows Remote Desktop">RDP</button>
@@ -520,6 +520,7 @@ window.connectKnown = async function(nodeId, endpoint) {
       targetNodeId: nodeId,
       targetEndpoint: endpoint,
     });
+    await updatePeers();
     alert('Connection request sent to ' + endpoint + '. Waiting for peer to accept.');
   } catch (e) {
     alert('Connection request error: ' + e);

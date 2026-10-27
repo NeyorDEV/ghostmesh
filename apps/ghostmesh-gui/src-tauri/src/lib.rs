@@ -431,6 +431,22 @@ async fn respond_connection_request(
     let engine = guard.as_ref().ok_or("Engine not started")?;
     let dest_node: ghost_protocol::NodeId = node_id.parse().map_err(|e| format!("{e}"))?;
 
+    if accept {
+        let req = engine.pending_request.read().await;
+        if let Some(ref r) = *req {
+            if r.node_id == node_id {
+                if let Ok(addr) = r.endpoint.parse::<std::net::SocketAddr>() {
+                    engine.add_peer(dest_node, addr).await;
+                    let mut table = engine.peers.write().await;
+                    if let Some(p) = table.get_mut(&dest_node) {
+                        p.state = ghost_core::PeerState::Connected;
+                        p.last_seen = std::time::Instant::now();
+                    }
+                }
+            }
+        }
+    }
+
     let packet_type = if accept {
         ghost_protocol::PacketType::PairAccept
     } else {

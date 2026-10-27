@@ -54,6 +54,7 @@ pub struct MeshEngine {
     pub chat_messages: Arc<RwLock<Vec<ChatMessageEntry>>>,
     pub last_clipboard: Arc<RwLock<Option<ClipboardEntry>>>,
     pub active_exit_node: Arc<RwLock<Option<String>>>,
+    pub is_ephemeral: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -201,6 +202,7 @@ impl MeshEngine {
             chat_messages,
             last_clipboard,
             active_exit_node,
+            is_ephemeral: true,
         })
     }
 
@@ -334,6 +336,7 @@ impl MeshEngine {
             chat_messages,
             last_clipboard,
             active_exit_node,
+            is_ephemeral: false,
         })
     }
 
@@ -617,7 +620,9 @@ impl MeshEngine {
                                         table.insert(new_peer);
                                     }
 
-                                    record_known_peer(&packet.src_node.to_string(), &remote_addr.to_string());
+                                    if !self.is_ephemeral {
+                                        record_known_peer(&packet.src_node.to_string(), &remote_addr.to_string());
+                                    }
 
                                     drop(table);
                                     let _ = self
@@ -644,7 +649,9 @@ impl MeshEngine {
                                             p.public_key = Some(pk);
                                         }
                                     }
-                                    record_known_peer(&packet.src_node.to_string(), &remote_addr.to_string());
+                                    if !self.is_ephemeral {
+                                        record_known_peer(&packet.src_node.to_string(), &remote_addr.to_string());
+                                    }
                                 }
 
                                 PacketType::KeepAlive => {
