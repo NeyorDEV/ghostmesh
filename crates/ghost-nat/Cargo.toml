@@ -12,3 +12,4 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 igd = { version = "0.12.1", features = ["aio"] }
+default-net = "0.22"

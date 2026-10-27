@@ -2,7 +2,7 @@
   --bg-base: #0a0e17;
   --bg-surface: #111827;
   --bg-card: rgba(17, 24, 39, 0.75);
-  --border: rgba(255, 255, 255, 0.08);
+  --border: rgb(var(--ink) / 0.08);
   --border-focus: #06b6d4;
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
@@ -10,8 +10,28 @@
   --accent-glow: rgba(6, 182, 212, 0.25);
   --green: #10b981;
   --green-glow: rgba(16, 185, 129, 0.3);
+  --ink: 255 255 255;
+  --input-bg: #050811;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Light theme: swaps surfaces and the "ink" used for borders / subtle fills */
+:root[data-theme="light"] {
+  --bg-base: #f1f5f9;
+  --bg-surface: #ffffff;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --border: rgba(15, 23, 42, 0.12);
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --accent: #0891b2;
+  --ink: 15 23 42;
+  --input-bg: #ffffff;
+}
+
+:root[data-theme="light"] .card,
+:root[data-theme="light"] .ghostdrop-card {
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
 }
 
 * {
@@ -184,13 +204,13 @@ body {
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--ink) / 0.05);
   color: var(--text-main);
   border: 1px solid var(--border);
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(var(--ink) / 0.1);
 }
 
 .peers-counter {
@@ -266,7 +286,7 @@ body {
 
 .peers-table td {
   padding: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgb(var(--ink) / 0.04);
 }
 
 .empty-row td {
@@ -330,7 +350,7 @@ body {
 .ticket-box, .input-ticket {
   width: 100%;
   padding: 12px;
-  background: #050811;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--accent);
@@ -463,7 +483,7 @@ body {
 }
 
 .btn-ghost {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--ink) / 0.05);
   border: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 12px;
@@ -474,9 +494,9 @@ body {
 }
 
 .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(var(--ink) / 0.1);
   color: var(--text-main);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgb(var(--ink) / 0.2);
 }
 
 .btn-accent {
@@ -525,7 +545,7 @@ body {
 
 .input-group select,
 .file-picker-row input {
-  background: #050811;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 9px 12px;
@@ -581,7 +601,7 @@ body {
 .progress-track {
   width: 100%;
   height: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(var(--ink) / 0.08);
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -609,7 +629,7 @@ body {
   align-items: center;
   margin: 16px 0;
   padding: 12px;
-  background: #050811;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -744,7 +764,7 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 14px;
-  background: #050811;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   display: flex;
@@ -778,7 +798,7 @@ body {
 
 .chat-bubble.incoming {
   align-self: flex-start;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(var(--ink) / 0.05);
   border: 1px solid var(--border);
   color: #f1f5f9;
 }
@@ -797,7 +817,7 @@ body {
 
 .chat-footer input {
   flex: 1;
-  background: #050811;
+  background: var(--input-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 12px;
@@ -940,4 +960,140 @@ body {
 .peer-actions button {
   margin: 0;
   white-space: nowrap;
+}
+
+/* Theme toggle */
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-theme {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.btn-theme:hover {
+  color: var(--text-main);
+  border-color: var(--accent);
+}
+
+/* Peer action buttons stay readable at any window size */
+.peers-table td,
+.peers-table th {
+  vertical-align: middle;
+}
+
+/* Diagnostics panel */
+.diag-section {
+  margin-top: 24px;
+}
+
+.diag-section summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.diag-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.diag-section summary h2::after {
+  content: "\25BE";
+  margin-left: 8px;
+  color: var(--text-muted);
+}
+
+.diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 20px;
+  margin-top: 12px;
+}
+
+.diag-item {
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.diag-item .k {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.diag-item .v {
+  word-break: break-word;
+}
+
+.diag-hints {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diag-hint {
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--text-main);
+}
+
+.diag-ok {
+  border-color: var(--green);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.ok-text { color: var(--green); }
+.bad-text { color: #f87171; }
+
+/* Narrow windows: peers table turns into stacked cards, no horizontal scrolling */
+@media (max-width: 760px) {
+  .peers-table thead {
+    display: none;
+  }
+
+  .peers-table,
+  .peers-table tbody,
+  .peers-table tr,
+  .peers-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .peers-table tr {
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .peers-table td {
+    border-bottom: none;
+    padding: 4px 8px;
+    max-width: none !important;
+  }
+
+  .peer-actions {
+    min-width: 0;
+  }
+
+  .header-status {
+    flex-wrap: wrap;
+  }
 }

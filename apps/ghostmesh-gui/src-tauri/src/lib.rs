@@ -12,6 +12,8 @@ pub struct GuiState {
     pub engine: Arc<RwLock<Option<Arc<MeshEngine>>>>,
     pub virtual_ip: Arc<RwLock<Option<Ipv4Addr>>>,
     pub transfer_status: Arc<RwLock<Option<ghostdrop::TransferStatus>>>,
+    /// Why the mesh engine could not start (shown in the UI instead of a fake "simulated" node).
+    pub engine_error: Arc<RwLock<Option<String>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -34,7 +36,12 @@ pub struct PeerInfo {
 #[tauri::command]
 async fn get_node_status(state: State<'_, GuiState>) -> Result<NodeStatus, String> {
     let guard = state.engine.read().await;
-    let engine = guard.as_ref().ok_or("Engine not started")?;
+    let Some(engine) = guard.as_ref() else {
+        return Err(match state.engine_error.read().await.as_ref() {
+            Some(e) => format!("Engine failed to start: {e}"),
+            None => "Engine starting...".to_string(),
+        });
+    };
 
     let peers_count = {
         let table = engine.peers.read().await;
@@ -50,6 +57,13 @@ async fn get_node_status(state: State<'_, GuiState>) -> Result<NodeStatus, Strin
         is_active: true,
         peers_count,
     })
+}
+
+#[tauri::command]
+async fn get_diagnostics(state: State<'_, GuiState>) -> Result<ghost_core::DiagnosticsSnapshot, String> {
+    let guard = state.engine.read().await;
+    let engine = guard.as_ref().ok_or("Engine not started")?;
+    Ok(engine.diagnostics().await)
 }
 
 #[tauri::command]
@@ -436,10 +450,11 @@ async fn respond_connection_request(
         if let Some(ref r) = *req {
             if r.node_id == node_id {
                 if let Ok(addr) = r.endpoint.parse::<std::net::SocketAddr>() {
+                    // Stays "Punching" until the authenticated key exchange completes
                     engine.add_peer(dest_node, addr).await;
                     let mut table = engine.peers.write().await;
                     if let Some(p) = table.get_mut(&dest_node) {
-                        p.state = ghost_core::PeerState::Connected;
+                        p.state = ghost_core::PeerState::Punching;
                         p.last_seen = std::time::Instant::now();
                     }
                 }
@@ -513,6 +528,7 @@ pub fn run() {
             engine: Arc::new(RwLock::new(None)),
             virtual_ip: Arc::new(RwLock::new(None)),
             transfer_status: Arc::clone(&transfer_status),
+            engine_error: Arc::new(RwLock::new(None)),
         })
         .setup(|app| {
             let is_silent = std::env::args().any(|a| a == "--silent" || a == "--minimized");
@@ -572,6 +588,8 @@ pub fn run() {
                     }
                     Err(e) => {
                         eprintln!("Failed to bind mesh engine: {e}");
+                        let state = handle.state::<GuiState>();
+                        *state.engine_error.write().await = Some(e.to_string());
                     }
                 }
             });
@@ -584,6 +602,7 @@ pub fn run() {
             join_peer,
             disconnect_peer,
             get_peers,
+            get_diagnostics,
             ghostdrop_send,
             ghostdrop_get_status,
             ghostdrop_open_folder,

@@ -6,7 +6,7 @@ pub mod sync;
 use serde::{Deserialize, Serialize};
 
 pub use config::{load_config, save_config, AppConfig, KnownPeer};
-pub use peer::{Peer, PeerState, PeerTable};
+pub use peer::{LinkTx, Peer, PeerState, PeerTable};
 pub use relay::RelayClient;
 pub use sync::{GhostSyncEngine, SyncStatus};
 
@@ -16,17 +16,19 @@ pub struct PendingConnectionRequest {
     pub endpoint: String,
 }
 
-use ghost_crypto::IdentityKeypair;
+use ghost_crypto::{IdentityKeypair, SessionKeys};
 use ghost_nat::DEFAULT_STUN_SERVER;
 use ghost_protocol::{InviteTicket, NodeId, Packet, PacketType};
 use ghost_tun::{Ipv4Header, VirtualAdapter};
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info, warn};
 
 #[derive(Error, Debug)]
@@ -55,6 +57,12 @@ pub struct MeshEngine {
     pub last_clipboard: Arc<RwLock<Option<ClipboardEntry>>>,
     pub active_exit_node: Arc<RwLock<Option<String>>>,
     pub is_ephemeral: bool,
+    pub local_udp_port: u16,
+    pub tcp_port: Option<u16>,
+    tcp_listener: std::sync::Mutex<Option<tokio::net::TcpListener>>,
+    seq: AtomicU64,
+    udp_enabled: AtomicBool,
+    pub diag: Arc<Diagnostics>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -115,6 +123,40 @@ fn record_known_peer(node_id: &str, endpoint: &str) {
     }
 }
 
+/// Connectivity counters shared with the receive paths (read by the diagnostics panel).
+#[derive(Default)]
+pub struct Diagnostics {
+    pub udp_rx: AtomicU64,
+    pub tcp_rx: AtomicU64,
+    pub rejected: AtomicU64,
+    pub last_rx_unix: AtomicU64,
+    pub tcp_links: AtomicU64,
+    pub stun_ok: AtomicBool,
+    pub mapping: RwLock<Option<ghost_nat::MappingReport>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DiagnosticsSnapshot {
+    pub node_id: String,
+    pub public_endpoint: String,
+    pub stun_ok: bool,
+    pub udp_port: u16,
+    pub tcp_port: Option<u16>,
+    pub mapping_done: bool,
+    pub mapping_method: Option<String>,
+    pub upnp: String,
+    pub natpmp: String,
+    pub pcp: String,
+    pub router_external_ip: Option<String>,
+    pub tcp_external_ports: Vec<u16>,
+    pub udp_packets_rx: u64,
+    pub tcp_packets_rx: u64,
+    pub rejected_packets: u64,
+    pub last_packet_secs_ago: Option<u64>,
+    pub tcp_links: usize,
+    pub hints: Vec<String>,
+}
+
 impl MeshEngine {
     pub async fn bind_ephemeral(local_port: u16) -> Result<Self, EngineError> {
         let identity = IdentityKeypair::generate()
@@ -123,144 +165,36 @@ impl MeshEngine {
     }
 
     pub async fn bind_with_identity(local_port: u16, identity: IdentityKeypair) -> Result<Self, EngineError> {
-        let ports_to_try = if local_port == 0 {
-            vec![0]
-        } else {
-            vec![local_port, local_port + 2, local_port + 4, local_port + 6, 0]
-        };
-
-        let mut bound_socket = None;
-        let mut actual_port = local_port;
-
-        for p in ports_to_try {
-            match UdpSocket::bind(format!("0.0.0.0:{p}")).await {
-                Ok(s) => {
-                    actual_port = s.local_addr()?.port();
-                    bound_socket = Some(s);
-                    break;
-                }
-                Err(e) => {
-                    warn!("UDP port {p} unavailable ({e}), trying next fallback port...");
-                }
-            }
-        }
-
-        let socket = bound_socket.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::AddrInUse, "No available UDP port found")
-        })?;
-        let socket = Arc::new(socket);
-
+        let (socket, actual_port, _secondary) = Self::bind_udp(local_port).await?;
         info!("Local UDP socket bound on port {actual_port}");
-
-        let public_addr = match ghost_nat::discover_public_endpoint(
-            &socket,
-            DEFAULT_STUN_SERVER,
-            Duration::from_secs(3),
-        )
-        .await
-        {
-            Ok(addr) => {
-                info!("Public endpoint discovered via STUN: {addr}");
-                addr
-            }
-            Err(e) => {
-                warn!("STUN discovery failed ({e}), falling back to local socket addr");
-                socket.local_addr()?
-            }
-        };
-
-        let peers = Arc::new(RwLock::new(PeerTable::new()));
-        let adapter = Arc::new(RwLock::new(None));
-        let relay = Arc::new(RwLock::new(None));
-        let sync = Arc::new(GhostSyncEngine::new());
-        let pending_request = Arc::new(RwLock::new(None));
-
-        if actual_port > 0 {
-            tokio::spawn(async move {
-                match ghost_nat::forward_port_upnp(actual_port, actual_port).await {
-                    Ok(_) => info!("UPnP: UDP port {actual_port} automatically mapped on router"),
-                    Err(e) => warn!("UPnP mapping skipped or unavailable: {e}"),
-                }
-            });
-        }
-
-        let chat_messages = Arc::new(RwLock::new(Vec::new()));
-        let last_clipboard = Arc::new(RwLock::new(None));
-        let active_exit_node = Arc::new(RwLock::new(None));
-        let lan_endpoints = get_local_lan_endpoints(actual_port);
-
-        Ok(Self {
-            identity,
-            socket,
-            public_addr,
-            lan_endpoints,
-            peers,
-            adapter,
-            relay,
-            sync,
-            pending_request,
-            chat_messages,
-            last_clipboard,
-            active_exit_node,
-            is_ephemeral: true,
-        })
+        Self::finish_bind(socket, actual_port, identity, true).await
     }
 
     pub async fn bind(local_port: u16) -> Result<Self, EngineError> {
-        // Try primary port, then progressive fallbacks (+2, +4, +6) or dynamic port 0
-        let ports_to_try = if local_port == 0 {
-            vec![0]
-        } else {
-            vec![local_port, local_port + 2, local_port + 4, local_port + 6, 0]
-        };
-
-        let mut bound_socket = None;
-        let mut actual_port = local_port;
-        let mut is_secondary = false;
-
-        for (idx, p) in ports_to_try.iter().enumerate() {
-            match UdpSocket::bind(format!("0.0.0.0:{p}")).await {
-                Ok(s) => {
-                    actual_port = s.local_addr()?.port();
-                    bound_socket = Some(s);
-                    if idx > 0 {
-                        is_secondary = true;
-                    }
-                    break;
-                }
-                Err(e) => {
-                    warn!("UDP port {p} unavailable ({e}), trying next fallback port...");
-                }
-            }
-        }
-
-        let socket = bound_socket.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::AddrInUse, "No available UDP port found")
-        })?;
-        let socket = Arc::new(socket);
-
+        let (socket, actual_port, is_secondary) = Self::bind_udp(local_port).await?;
         info!("Local UDP socket bound on port {actual_port} (secondary={is_secondary})");
 
         let mut cfg = load_config();
         let identity = if !is_secondary {
-            if let (Some(priv_hex), Some(pub_hex)) = (&cfg.private_key_hex, &cfg.public_key_hex) {
-                if let (Ok(priv_b), Ok(pub_b)) = (hex::decode(priv_hex), hex::decode(pub_hex)) {
-                    if priv_b.len() == 32 && pub_b.len() == 32 {
+            let stored = match (&cfg.private_key_hex, &cfg.public_key_hex) {
+                (Some(priv_hex), Some(pub_hex)) => match (hex::decode(priv_hex), hex::decode(pub_hex)) {
+                    (Ok(priv_b), Ok(pub_b)) if priv_b.len() == 32 && pub_b.len() == 32 => {
                         let mut priv_arr = [0u8; 32];
                         let mut pub_arr = [0u8; 32];
                         priv_arr.copy_from_slice(&priv_b);
                         pub_arr.copy_from_slice(&pub_b);
-                        info!("Loaded persistent cryptographic identity: NodeId {}", hex::encode(&pub_arr[..16]));
-                        IdentityKeypair::from_key_bytes(priv_arr, pub_arr)
-                    } else {
-                        let gen = IdentityKeypair::generate()
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-                        cfg.private_key_hex = Some(hex::encode(gen.private));
-                        cfg.public_key_hex = Some(hex::encode(gen.public));
-                        let _ = save_config(&cfg);
-                        gen
+                        Some(IdentityKeypair::from_key_bytes(priv_arr, pub_arr))
                     }
-                } else {
+                    _ => None,
+                },
+                _ => None,
+            };
+            match stored {
+                Some(id) => {
+                    info!("Loaded persistent cryptographic identity: NodeId {}", id.node_id());
+                    id
+                }
+                None => {
                     let gen = IdentityKeypair::generate()
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
                     cfg.private_key_hex = Some(hex::encode(gen.private));
@@ -268,23 +202,52 @@ impl MeshEngine {
                     let _ = save_config(&cfg);
                     gen
                 }
-            } else {
-                let gen = IdentityKeypair::generate()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-                cfg.private_key_hex = Some(hex::encode(gen.private));
-                cfg.public_key_hex = Some(hex::encode(gen.public));
-                let _ = save_config(&cfg);
-                gen
             }
         } else {
             // Secondary instance on the same PC: generate an independent ephemeral identity
             // so local multi-window instances have distinct NodeIds and can pair with each other!
             let gen = IdentityKeypair::generate()
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            info!("Secondary instance: generated ephemeral NodeId {}", hex::encode(&gen.public[..16]));
+            info!("Secondary instance: generated ephemeral NodeId {}", gen.node_id());
             gen
         };
 
+        Self::finish_bind(socket, actual_port, identity, false).await
+    }
+
+    /// Binds the UDP socket on `local_port`, falling back to +2/+4/+6 then any free port.
+    async fn bind_udp(local_port: u16) -> Result<(UdpSocket, u16, bool), EngineError> {
+        // Try primary port, then progressive fallbacks (+2, +4, +6) or dynamic port 0
+        let ports_to_try = if local_port == 0 {
+            vec![0]
+        } else {
+            vec![local_port, local_port + 2, local_port + 4, local_port + 6, 0]
+        };
+
+        for (idx, p) in ports_to_try.iter().enumerate() {
+            match UdpSocket::bind(format!("0.0.0.0:{p}")).await {
+                Ok(s) => {
+                    let port = s.local_addr()?.port();
+                    return Ok((s, port, idx > 0));
+                }
+                Err(e) => {
+                    warn!("UDP port {p} unavailable ({e}), trying next fallback port...");
+                }
+            }
+        }
+
+        Err(std::io::Error::new(std::io::ErrorKind::AddrInUse, "No available UDP port found").into())
+    }
+
+    async fn finish_bind(
+        socket: UdpSocket,
+        actual_port: u16,
+        identity: IdentityKeypair,
+        is_ephemeral: bool,
+    ) -> Result<Self, EngineError> {
+        let socket = Arc::new(socket);
+
+        let diag = Arc::new(Diagnostics::default());
         let public_addr = match ghost_nat::discover_public_endpoint(
             &socket,
             DEFAULT_STUN_SERVER,
@@ -294,6 +257,7 @@ impl MeshEngine {
         {
             Ok(addr) => {
                 info!("Public endpoint discovered via STUN: {addr}");
+                diag.stun_ok.store(true, Ordering::Relaxed);
                 addr
             }
             Err(e) => {
@@ -302,41 +266,59 @@ impl MeshEngine {
             }
         };
 
-        let peers = Arc::new(RwLock::new(PeerTable::new()));
-        let adapter = Arc::new(RwLock::new(None));
-        let relay = Arc::new(RwLock::new(None));
-        let sync = Arc::new(GhostSyncEngine::new());
-        let pending_request = Arc::new(RwLock::new(None));
+        // TCP fallback listener: same port number as UDP when free, otherwise any free port
+        let tcp_listener = match tokio::net::TcpListener::bind(("0.0.0.0", actual_port)).await {
+            Ok(l) => Some(l),
+            Err(_) => tokio::net::TcpListener::bind(("0.0.0.0", 0)).await.ok(),
+        };
+        let tcp_port = tcp_listener.as_ref().and_then(|l| l.local_addr().ok()).map(|a| a.port());
+        match tcp_port {
+            Some(p) => info!("TCP fallback listener bound on port {p}"),
+            None => warn!("TCP fallback listener unavailable"),
+        }
 
-        // Automatically attempt UPnP port mapping on domestic router in background
+        // Automatically open the ports on the domestic router (UPnP, then NAT-PMP, then PCP)
         if actual_port > 0 {
+            let diag_map = Arc::clone(&diag);
             tokio::spawn(async move {
-                match ghost_nat::forward_port_upnp(actual_port, actual_port).await {
-                    Ok(_) => info!("UPnP: UDP port {actual_port} automatically mapped on router"),
-                    Err(e) => warn!("UPnP mapping skipped or unavailable: {e}"),
+                let report = ghost_nat::map_ports(actual_port, tcp_port).await;
+                match &report.method {
+                    Some(m) => info!("{m}: UDP port {actual_port} automatically mapped on router"),
+                    None => warn!(
+                        "Router port mapping failed (UPnP: {}; NAT-PMP: {}; PCP: {})",
+                        report.upnp, report.natpmp, report.pcp
+                    ),
                 }
+                *diag_map.mapping.write().await = Some(report);
             });
         }
 
-        let chat_messages = Arc::new(RwLock::new(Vec::new()));
-        let last_clipboard = Arc::new(RwLock::new(None));
-        let active_exit_node = Arc::new(RwLock::new(None));
         let lan_endpoints = get_local_lan_endpoints(actual_port);
+        let seq_base = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros() as u64;
 
         Ok(Self {
             identity,
             socket,
             public_addr,
             lan_endpoints,
-            peers,
-            adapter,
-            relay,
-            sync,
-            pending_request,
-            chat_messages,
-            last_clipboard,
-            active_exit_node,
-            is_ephemeral: false,
+            peers: Arc::new(RwLock::new(PeerTable::new())),
+            adapter: Arc::new(RwLock::new(None)),
+            relay: Arc::new(RwLock::new(None)),
+            sync: Arc::new(GhostSyncEngine::new()),
+            pending_request: Arc::new(RwLock::new(None)),
+            chat_messages: Arc::new(RwLock::new(Vec::new())),
+            last_clipboard: Arc::new(RwLock::new(None)),
+            active_exit_node: Arc::new(RwLock::new(None)),
+            is_ephemeral,
+            local_udp_port: actual_port,
+            tcp_port,
+            tcp_listener: std::sync::Mutex::new(tcp_listener),
+            seq: AtomicU64::new(seq_base),
+            udp_enabled: AtomicBool::new(true),
+            diag,
         })
     }
 
@@ -418,6 +400,183 @@ impl MeshEngine {
             info!("Mapped peer {node_id} to virtual mesh IP {virtual_ip}");
         }
     }
+}
+
+/// Maximum accepted TCP frame (an encoded packet); larger frames close the link.
+const MAX_TCP_FRAME: usize = 70_000;
+/// A TCP link that stays silent this long is closed (authenticated keep-alives run every 10 s).
+const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+const MAX_TCP_LINKS: usize = 64;
+/// Plaintext carried inside handshake proofs.
+const HANDSHAKE_PROOF: &[u8] = b"GM-HS";
+/// After this long without any answer a joined peer is reported as unreachable.
+const JOIN_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn packet_aad(packet_type: PacketType, src: &NodeId, dest: &NodeId) -> [u8; 33] {
+    let mut aad = [0u8; 33];
+    aad[0] = packet_type as u8;
+    aad[1..17].copy_from_slice(dest.as_bytes());
+    aad[17..33].copy_from_slice(src.as_bytes());
+    aad
+}
+
+/// Packet types whose payload is never encrypted: they exist to establish trust in the first place.
+fn is_plain_type(packet_type: PacketType) -> bool {
+    matches!(
+        packet_type,
+        PacketType::StunProbe
+            | PacketType::PairRequest
+            | PacketType::PairAccept
+            | PacketType::PairReject
+            | PacketType::HandshakeInit
+            | PacketType::HandshakeResp
+    )
+}
+
+fn key_from_payload(payload: &[u8]) -> Option<[u8; 32]> {
+    if payload.len() < 32 {
+        return None;
+    }
+    let mut pk = [0u8; 32];
+    pk.copy_from_slice(&payload[..32]);
+    Some(pk)
+}
+
+fn node_id_of(pk: &[u8; 32]) -> NodeId {
+    let mut id = [0u8; 16];
+    id.copy_from_slice(&pk[..16]);
+    NodeId::new(id)
+}
+
+/// Updates which transport reaches the peer after an authenticated packet arrived.
+fn note_transport(peer: &mut Peer, remote: SocketAddr, link: &Option<LinkTx>) {
+    match link {
+        None => {
+            peer.endpoint = remote;
+            peer.last_udp = Some(std::time::Instant::now());
+            peer.tcp = None;
+        }
+        Some(tx) => {
+            let udp_recent = peer
+                .last_udp
+                .map(|t| t.elapsed() < Duration::from_secs(20))
+                .unwrap_or(false);
+            if !udp_recent {
+                if peer.last_udp.is_none() {
+                    peer.endpoint = remote;
+                }
+                peer.tcp = Some(tx.clone());
+            }
+        }
+    }
+}
+
+impl MeshEngine {
+    pub fn set_udp_enabled(&self, enabled: bool) {
+        self.udp_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    fn next_seq(&self) -> u64 {
+        self.seq.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Builds a protected packet. Handshake packets carry our public key (plus a proof of
+    /// possession once the peer's key is known); every other data-bearing type is encrypted.
+    fn build_packet(
+        &self,
+        packet_type: PacketType,
+        dest: NodeId,
+        session: Option<&SessionKeys>,
+        plaintext: &[u8],
+    ) -> Result<Packet, EngineError> {
+        let src = self.node_id();
+        let seq = self.next_seq();
+        let aad = packet_aad(packet_type, &src, &dest);
+
+        let payload = match packet_type {
+            PacketType::HandshakeInit | PacketType::HandshakeResp => {
+                let mut p = self.identity.public.to_vec();
+                if let Some(s) = session {
+                    p.extend_from_slice(&s.seal(seq, &aad, HANDSHAKE_PROOF));
+                }
+                p
+            }
+            t if is_plain_type(t) => plaintext.to_vec(),
+            _ => match session {
+                Some(s) => s.seal(seq, &aad, plaintext),
+                None => {
+                    return Err(EngineError::Protocol(ghost_protocol::ProtocolError::BufferError(
+                        format!("no session key for peer {dest} yet (handshake not completed)"),
+                    )))
+                }
+            },
+        };
+
+        Ok(Packet::new(packet_type, src, dest, seq, payload))
+    }
+
+    /// Sends an already encoded packet to `remote` over the given link (TCP) or UDP.
+    async fn send_to_remote(&self, remote: SocketAddr, link: &Option<LinkTx>, encoded: &[u8]) {
+        if let Some(tx) = link {
+            let _ = tx.send(encoded.to_vec()).await;
+        } else if self.udp_enabled.load(Ordering::Relaxed) {
+            let _ = self.socket.send_to(encoded, remote).await;
+        }
+    }
+
+    pub async fn send_packet(
+        &self,
+        dest_node: NodeId,
+        packet_type: PacketType,
+        payload: &[u8],
+    ) -> Result<(), EngineError> {
+        let snapshot = {
+            let table = self.peers.read().await;
+            table
+                .get(&dest_node)
+                .map(|p| (p.endpoint, p.tcp.clone(), p.session.clone()))
+        };
+
+        let Some((target_addr, tcp, session)) = snapshot else {
+            warn!("Peer {dest_node} not found in peer table");
+            return Ok(());
+        };
+
+        let packet = self.build_packet(packet_type, dest_node, session.as_deref(), payload)?;
+        let encoded = packet.encode();
+
+        if let Some(tx) = tcp {
+            if tx.send(encoded.to_vec()).await.is_ok() {
+                return Ok(());
+            }
+            // TCP link died: forget it and fall back to UDP below
+            let mut table = self.peers.write().await;
+            if let Some(p) = table.get_mut(&dest_node) {
+                p.tcp = None;
+            }
+        }
+
+        if target_addr.ip().is_unspecified() {
+            // Outbound UDP blocked or 0.0.0.0: route via TCP/HTTPS fallback relay
+            let guard = self.relay.read().await;
+            if let Some(relay_client) = guard.as_ref() {
+                let _ = relay_client.send_relayed_packet(&packet).await;
+            } else {
+                warn!("Target peer has unspecified endpoint and no relay client is configured");
+            }
+        } else if self.udp_enabled.load(Ordering::Relaxed) {
+            self.socket.send_to(&encoded, target_addr).await?;
+        }
+
+        Ok(())
+    }
 
     pub async fn join_ticket(self: &Arc<Self>, ticket: InviteTicket) -> Result<(), EngineError> {
         if ticket.node_id == self.node_id() {
@@ -429,8 +588,8 @@ impl MeshEngine {
         let all_endpoints = ticket.all_endpoints();
         let primary_endpoint = all_endpoints.first().copied().unwrap_or(ticket.endpoint);
 
-        let mut peer = Peer::new(ticket.node_id, primary_endpoint)
-            .with_public_key(ticket.public_key);
+        let mut peer = Peer::new(ticket.node_id, primary_endpoint);
+        peer.set_public_key(&self.identity, ticket.public_key);
         peer.state = PeerState::Punching;
         {
             let mut table = self.peers.write().await;
@@ -446,86 +605,253 @@ impl MeshEngine {
 
         let engine = Arc::clone(self);
         tokio::spawn(async move {
-            let mut attempts = 0;
-            while attempts < 30 {
-                let is_connected = {
-                    let table = engine.peers.read().await;
-                    table.get(&ticket.node_id).map(|p| p.state == PeerState::Connected).unwrap_or(false)
-                };
+            let session = SessionKeys::derive(&engine.identity, &ticket.public_key);
+            let started = std::time::Instant::now();
+            let mut tcp_rounds = 0u32;
 
-                if is_connected {
-                    info!("Hole punching complete, peer {} is connected!", ticket.node_id);
+            loop {
+                let state = {
+                    let table = engine.peers.read().await;
+                    table.get(&ticket.node_id).map(|p| p.state)
+                };
+                match state {
+                    None => break, // peer removed by the user
+                    Some(PeerState::Connected) => {
+                        info!("Hole punching complete, peer {} is connected!", ticket.node_id);
+                        break;
+                    }
+                    _ => {}
+                }
+
+                let elapsed = started.elapsed();
+                if elapsed > JOIN_TIMEOUT {
+                    warn!("No reply from {} after {:?}: marking unreachable", ticket.node_id, JOIN_TIMEOUT);
+                    let mut table = engine.peers.write().await;
+                    if let Some(p) = table.get_mut(&ticket.node_id) {
+                        if p.state != PeerState::Connected {
+                            p.state = PeerState::Unreachable;
+                        }
+                    }
                     break;
                 }
 
-                let packet = Packet::new(
-                    PacketType::HandshakeInit,
-                    engine.node_id(),
-                    ticket.node_id,
-                    1,
-                    engine.identity.public.to_vec(),
-                );
-                let encoded = packet.encode();
-
-                for &candidate in &all_endpoints {
-                    if !candidate.ip().is_unspecified() {
-                        let _ = engine.socket.send_to(&encoded, candidate).await;
+                if engine.udp_enabled.load(Ordering::Relaxed) {
+                    if let Ok(packet) =
+                        engine.build_packet(PacketType::HandshakeInit, ticket.node_id, Some(&session), &[])
+                    {
+                        let encoded = packet.encode();
+                        for &candidate in &all_endpoints {
+                            if !candidate.ip().is_unspecified() {
+                                let _ = engine.socket.send_to(&encoded, candidate).await;
+                            }
+                        }
                     }
                 }
 
-                attempts += 1;
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                // UDP got no answer: also try the TCP fallback (at 4 s, then again at 25 s)
+                let tcp_due = (tcp_rounds == 0 && (elapsed > Duration::from_secs(4) || !engine.udp_enabled.load(Ordering::Relaxed)))
+                    || (tcp_rounds == 1 && elapsed > Duration::from_secs(25));
+                if tcp_due {
+                    tcp_rounds += 1;
+                    engine.spawn_tcp_attempts(&ticket, &session);
+                }
+
+                let pause = if elapsed < Duration::from_secs(5) { 250 } else { 1000 };
+                tokio::time::sleep(Duration::from_millis(pause)).await;
             }
         });
 
         Ok(())
     }
 
-    pub async fn send_packet(
-        &self,
-        dest_node: NodeId,
-        packet_type: PacketType,
-        payload: &[u8],
-    ) -> Result<(), EngineError> {
-        let endpoint = {
+    /// Tries to reach the inviter over TCP (port 443 first, which corporate networks rarely filter).
+    fn spawn_tcp_attempts(self: &Arc<Self>, ticket: &InviteTicket, session: &SessionKeys) {
+        let mut candidates: Vec<SocketAddr> = Vec::new();
+        let public = ticket.endpoint;
+        candidates.push(SocketAddr::new(public.ip(), ghost_nat::TCP_FALLBACK_EXTERNAL_PORT));
+        candidates.push(public);
+        for lan in ticket.all_endpoints() {
+            if !candidates.contains(&lan) && !lan.ip().is_unspecified() {
+                candidates.push(lan);
+            }
+        }
+        info!("UDP silent: trying TCP fallback towards {:?}", candidates);
+
+        for addr in candidates {
+            let engine = Arc::clone(self);
+            let session = session.clone();
+            let dest = ticket.node_id;
+            tokio::spawn(async move {
+                let connect = tokio::time::timeout(Duration::from_secs(5), TcpStream::connect(addr)).await;
+                let Ok(Ok(stream)) = connect else { return };
+
+                let connected = {
+                    let table = engine.peers.read().await;
+                    table.get(&dest).map(|p| p.state == PeerState::Connected).unwrap_or(true)
+                };
+                if connected {
+                    return;
+                }
+
+                info!("TCP link established towards {addr}");
+                let tx = engine.spawn_tcp_link(stream, addr);
+                if let Ok(packet) = engine.build_packet(PacketType::HandshakeInit, dest, Some(&session), &[]) {
+                    let _ = tx.send(packet.encode().to_vec()).await;
+                }
+            });
+        }
+    }
+
+    /// Spawns the reader/writer tasks of one TCP link and returns its outbound channel.
+    fn spawn_tcp_link(self: &Arc<Self>, stream: TcpStream, remote: SocketAddr) -> LinkTx {
+        let _ = stream.set_nodelay(true);
+        let (mut rd, mut wr) = stream.into_split();
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(256);
+        self.diag.tcp_links.fetch_add(1, Ordering::Relaxed);
+
+        tokio::spawn(async move {
+            while let Some(frame) = rx.recv().await {
+                let len = (frame.len() as u32).to_be_bytes();
+                if wr.write_all(&len).await.is_err() || wr.write_all(&frame).await.is_err() {
+                    break;
+                }
+            }
+            let _ = wr.shutdown().await;
+        });
+
+        let engine = Arc::clone(self);
+        let reader_tx = tx.clone();
+        tokio::spawn(async move {
+            let mut len_buf = [0u8; 4];
+            loop {
+                let header = tokio::time::timeout(TCP_IDLE_TIMEOUT, rd.read_exact(&mut len_buf)).await;
+                if !matches!(header, Ok(Ok(_))) {
+                    break;
+                }
+                let len = u32::from_be_bytes(len_buf) as usize;
+                if len == 0 || len > MAX_TCP_FRAME {
+                    break;
+                }
+                let mut frame = vec![0u8; len];
+                if rd.read_exact(&mut frame).await.is_err() {
+                    break;
+                }
+                if let Ok(packet) = Packet::decode(&frame) {
+                    engine.diag.tcp_rx.fetch_add(1, Ordering::Relaxed);
+                    engine.diag.last_rx_unix.store(unix_secs(), Ordering::Relaxed);
+                    engine.handle_packet(packet, remote, Some(reader_tx.clone())).await;
+                }
+            }
+
+            engine.diag.tcp_links.fetch_sub(1, Ordering::Relaxed);
+            let mut table = engine.peers.write().await;
+            for p in table.iter_mut() {
+                if p.tcp.as_ref().map(|t| t.same_channel(&reader_tx)).unwrap_or(false) {
+                    p.tcp = None;
+                    if p.state == PeerState::Connected && p.last_udp.is_none() {
+                        p.state = PeerState::Disconnected;
+                    }
+                }
+            }
+        });
+
+        tx
+    }
+
+    async fn run_tcp_accept(self: Arc<Self>) {
+        let listener = self.tcp_listener.lock().ok().and_then(|mut g| g.take());
+        let Some(listener) = listener else { return };
+        loop {
+            match listener.accept().await {
+                Ok((stream, remote)) => {
+                    if self.diag.tcp_links.load(Ordering::Relaxed) >= MAX_TCP_LINKS as u64 {
+                        continue;
+                    }
+                    info!("Incoming TCP link from {remote}");
+                    self.spawn_tcp_link(stream, remote);
+                }
+                Err(e) => {
+                    warn!("TCP accept error: {e}");
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+            }
+        }
+    }
+
+    /// Full snapshot of connectivity state for the diagnostics panel.
+    pub async fn diagnostics(&self) -> DiagnosticsSnapshot {
+        let d = &self.diag;
+        let report = d.mapping.read().await.clone();
+        let (peers_waiting, tcp_peers) = {
             let table = self.peers.read().await;
-            table.get(&dest_node).map(|p| p.endpoint)
+            (
+                table
+                    .iter()
+                    .filter(|p| matches!(p.state, PeerState::Punching | PeerState::Unreachable))
+                    .count(),
+                table.iter().filter(|p| p.tcp.is_some()).count(),
+            )
         };
 
-        if let Some(target_addr) = endpoint {
-            let packet = Packet::new(
-                packet_type,
-                self.node_id(),
-                dest_node,
-                1,
-                payload.to_vec(),
-            );
-            let encoded = packet.encode();
+        let udp_rx = d.udp_rx.load(Ordering::Relaxed);
+        let tcp_rx = d.tcp_rx.load(Ordering::Relaxed);
+        let last = d.last_rx_unix.load(Ordering::Relaxed);
+        let stun_ok = d.stun_ok.load(Ordering::Relaxed);
 
-            if target_addr.ip().is_unspecified() {
-                // Outbound UDP blocked or 0.0.0.0: route via TCP/HTTPS fallback relay
-                let guard = self.relay.read().await;
-                if let Some(relay_client) = guard.as_ref() {
-                    let _ = relay_client.send_relayed_packet(&packet).await;
-                } else {
-                    warn!("Target peer has unspecified endpoint and no relay client is configured");
+        let mut hints = Vec::new();
+        if !stun_ok {
+            hints.push("STUN server unreachable: public IP unknown, internet access may be restricted.".to_string());
+        }
+        match &report {
+            None => hints.push("Router port mapping still in progress...".to_string()),
+            Some(r) => {
+                if !r.udp_mapped {
+                    hints.push(format!(
+                        "Router did not open UDP {} automatically (UPnP / NAT-PMP / PCP all failed). Forward UDP {} (and TCP 443) to this PC manually.",
+                        self.local_udp_port, self.local_udp_port
+                    ));
                 }
-            } else {
-                self.socket.send_to(&encoded, target_addr).await?;
+                if let (Some(router_ip), Some(public)) = (&r.external_ip, stun_ok.then_some(self.public_addr.ip())) {
+                    if router_ip.to_string() != public.to_string() {
+                        hints.push(format!(
+                            "Double NAT / CGNAT detected (router WAN {router_ip} differs from public IP {public}). Inbound connections will fail: ask your ISP for a public IP or use the TCP fallback from the other side."
+                        ));
+                    }
+                }
             }
-        } else {
-            warn!("Peer {dest_node} not found in peer table");
+        }
+        if peers_waiting > 0 && udp_rx == 0 && tcp_rx == 0 {
+            hints.push("A peer is waiting but no packet was ever received: the remote network probably blocks UDP, or the router is not forwarding the port. The TCP 443 fallback is being tried.".to_string());
+        }
+        if tcp_peers > 0 {
+            hints.push("Some peers are connected through the TCP fallback (UDP is blocked on the path).".to_string());
         }
 
-        Ok(())
+        DiagnosticsSnapshot {
+            node_id: self.node_id().to_string(),
+            public_endpoint: self.public_addr.to_string(),
+            stun_ok,
+            udp_port: self.local_udp_port,
+            tcp_port: self.tcp_port,
+            mapping_done: report.is_some(),
+            mapping_method: report.as_ref().and_then(|r| r.method.clone()),
+            upnp: report.as_ref().map(|r| r.upnp.clone()).unwrap_or_default(),
+            natpmp: report.as_ref().map(|r| r.natpmp.clone()).unwrap_or_default(),
+            pcp: report.as_ref().map(|r| r.pcp.clone()).unwrap_or_default(),
+            router_external_ip: report.as_ref().and_then(|r| r.external_ip.map(|i| i.to_string())),
+            tcp_external_ports: report.as_ref().map(|r| r.tcp_ports.clone()).unwrap_or_default(),
+            udp_packets_rx: udp_rx,
+            tcp_packets_rx: tcp_rx,
+            rejected_packets: d.rejected.load(Ordering::Relaxed),
+            last_packet_secs_ago: if last == 0 { None } else { Some(unix_secs().saturating_sub(last)) },
+            tcp_links: d.tcp_links.load(Ordering::Relaxed) as usize,
+            hints,
+        }
     }
 
     pub async fn send_chat_message(&self, dest_node: NodeId, text: &str) -> Result<(), EngineError> {
         self.send_packet(dest_node, PacketType::ChatMessage, text.as_bytes()).await?;
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let ts = unix_secs();
         let mut chat_guard = self.chat_messages.write().await;
         chat_guard.push(ChatMessageEntry {
             id: format!("{}-{}", self.node_id(), ts),
@@ -547,16 +873,16 @@ impl MeshEngine {
             let mut interval = tokio::time::interval(Duration::from_secs(10));
             loop {
                 interval.tick().await;
-                let peers_to_ping: Vec<(NodeId, SocketAddr)> = {
+                let peers_to_ping: Vec<NodeId> = {
                     let table = engine.peers.read().await;
                     table
                         .iter()
                         .filter(|p| p.state == PeerState::Connected)
-                        .map(|p| (p.node_id, p.endpoint))
+                        .map(|p| p.node_id)
                         .collect()
                 };
 
-                for (node_id, _) in peers_to_ping {
+                for node_id in peers_to_ping {
                     let _ = engine.send_packet(node_id, PacketType::KeepAlive, b"PING").await;
                 }
             }
@@ -564,180 +890,23 @@ impl MeshEngine {
     }
 
     pub async fn run_receive_loop(self: Arc<Self>) {
+        tokio::spawn(Arc::clone(&self).run_tcp_accept());
+
         let mut buf = [0u8; 65535];
         loop {
             match self.socket.recv_from(&mut buf).await {
                 Ok((len, remote_addr)) => {
-                    let raw = &buf[..len];
-                    match Packet::decode(raw) {
+                    if !self.udp_enabled.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    match Packet::decode(&buf[..len]) {
                         Ok(packet) => {
-                            // 1. Ignore any packet from ourselves (loopback reflection)
-                            if packet.src_node == self.node_id() {
-                                continue;
-                            }
-
-                            // 2. Multi-hop Mesh Routing: Forward packet if not destined for this node
-                            if packet.dest_node != self.node_id() {
-                                let table = self.peers.read().await;
-                                if let Some(target_peer) = table.get(&packet.dest_node) {
-                                    if target_peer.state == PeerState::Connected {
-                                        info!(
-                                            "Mesh Forwarder: routing packet (type {:?}) from {} towards {}",
-                                            packet.packet_type, packet.src_node, packet.dest_node
-                                        );
-                                        let encoded = packet.encode();
-                                        let _ = self.socket.send_to(&encoded, target_peer.endpoint).await;
-                                    }
-                                }
-                                // Never process packets destined for another node locally
-                                continue;
-                            }
-
-                            let mut table = self.peers.write().await;
-                            match packet.packet_type {
-                                PacketType::HandshakeInit => {
-                                    info!(
-                                        "Received HandshakeInit from {} at {}",
-                                        packet.src_node, remote_addr
-                                    );
-                                    let peer = table.get_mut(&packet.src_node);
-                                    if let Some(p) = peer {
-                                        p.endpoint = remote_addr;
-                                        p.state = PeerState::Connected;
-                                        p.last_seen = std::time::Instant::now();
-                                        if packet.payload.len() == 32 {
-                                            let mut pk = [0u8; 32];
-                                            pk.copy_from_slice(&packet.payload);
-                                            p.public_key = Some(pk);
-                                        }
-                                    } else {
-                                        let mut new_peer = Peer::new(packet.src_node, remote_addr);
-                                        new_peer.state = PeerState::Connected;
-                                        if packet.payload.len() == 32 {
-                                            let mut pk = [0u8; 32];
-                                            pk.copy_from_slice(&packet.payload);
-                                            new_peer.public_key = Some(pk);
-                                        }
-                                        table.insert(new_peer);
-                                    }
-
-                                    if !self.is_ephemeral {
-                                        record_known_peer(&packet.src_node.to_string(), &remote_addr.to_string());
-                                    }
-
-                                    drop(table);
-                                    let _ = self
-                                        .send_packet(
-                                            packet.src_node,
-                                            PacketType::HandshakeResp,
-                                            self.identity.public.as_slice(),
-                                        )
-                                        .await;
-                                }
-
-                                PacketType::HandshakeResp => {
-                                    info!(
-                                        "Received HandshakeResp from {} at {}! Direct connection established.",
-                                        packet.src_node, remote_addr
-                                    );
-                                    if let Some(p) = table.get_mut(&packet.src_node) {
-                                        p.endpoint = remote_addr;
-                                        p.state = PeerState::Connected;
-                                        p.last_seen = std::time::Instant::now();
-                                        if packet.payload.len() == 32 {
-                                            let mut pk = [0u8; 32];
-                                            pk.copy_from_slice(&packet.payload);
-                                            p.public_key = Some(pk);
-                                        }
-                                    }
-                                    if !self.is_ephemeral {
-                                        record_known_peer(&packet.src_node.to_string(), &remote_addr.to_string());
-                                    }
-                                }
-
-                                PacketType::KeepAlive => {
-                                    if let Some(p) = table.get_mut(&packet.src_node) {
-                                        p.last_seen = std::time::Instant::now();
-                                    }
-                                }
-
-                                PacketType::Data => {
-                                    // Forward incoming raw IP packet directly to local TUN device
-                                    let guard = self.adapter.read().await;
-                                    if let Some(adapter) = guard.as_ref() {
-                                        let _ = adapter.write_packet(&packet.payload).await;
-                                    }
-                                }
-
-                                PacketType::PairRequest => {
-                                    info!("Incoming connection request from {} at {}", packet.src_node, remote_addr);
-                                    let mut req_guard = self.pending_request.write().await;
-                                    *req_guard = Some(PendingConnectionRequest {
-                                        node_id: packet.src_node.to_string(),
-                                        endpoint: remote_addr.to_string(),
-                                    });
-                                }
-
-                                PacketType::PairAccept => {
-                                    info!("Connection request accepted by {} at {}", packet.src_node, remote_addr);
-                                    let peer = table.get_mut(&packet.src_node);
-                                    if let Some(p) = peer {
-                                        p.endpoint = remote_addr;
-                                        p.state = PeerState::Connected;
-                                        p.last_seen = std::time::Instant::now();
-                                    } else {
-                                        let mut new_p = Peer::new(packet.src_node, remote_addr);
-                                        new_p.state = PeerState::Connected;
-                                        table.insert(new_p);
-                                    }
-                                }
-
-                                PacketType::PairReject => {
-                                    warn!("Connection request rejected by {} at {}", packet.src_node, remote_addr);
-                                }
-
-                                PacketType::ChatMessage => {
-                                    if let Ok(text) = String::from_utf8(packet.payload.to_vec()) {
-                                        info!("Chat message received from {}: {}", packet.src_node, text);
-                                        let ts = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default()
-                                            .as_secs();
-                                        let mut chat_guard = self.chat_messages.write().await;
-                                        chat_guard.push(ChatMessageEntry {
-                                            id: format!("{}-{}", packet.src_node, ts),
-                                            sender: packet.src_node.to_string(),
-                                            recipient: self.node_id().to_string(),
-                                            text,
-                                            timestamp_secs: ts,
-                                        });
-                                    }
-                                }
-
-                                PacketType::ClipboardSync => {
-                                    if let Ok(text) = String::from_utf8(packet.payload.to_vec()) {
-                                        info!("Clipboard received from {}: {} chars", packet.src_node, text.len());
-                                        let ts = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default()
-                                            .as_secs();
-                                        let mut clip_guard = self.last_clipboard.write().await;
-                                        *clip_guard = Some(ClipboardEntry {
-                                            sender: packet.src_node.to_string(),
-                                            text,
-                                            timestamp_secs: ts,
-                                        });
-                                    }
-                                }
-
-                                PacketType::ExitNodeRoute => {
-                                    info!("Exit node routing notification from {}", packet.src_node);
-                                }
-
-                                PacketType::StunProbe => {}
-                            }
+                            self.diag.udp_rx.fetch_add(1, Ordering::Relaxed);
+                            self.diag.last_rx_unix.store(unix_secs(), Ordering::Relaxed);
+                            self.handle_packet(packet, remote_addr, None).await;
                         }
                         Err(e) => {
+                            self.diag.rejected.fetch_add(1, Ordering::Relaxed);
                             warn!("Malformed packet from {remote_addr}: {e}");
                         }
                     }
@@ -750,6 +919,282 @@ impl MeshEngine {
                     continue;
                 }
             }
+        }
+    }
+
+    /// Processes one decoded packet received over UDP (`link == None`) or a TCP link.
+    async fn handle_packet(self: &Arc<Self>, packet: Packet, remote: SocketAddr, link: Option<LinkTx>) {
+        // 1. Ignore any packet from ourselves (loopback reflection)
+        if packet.src_node == self.node_id() {
+            return;
+        }
+
+        // 2. Multi-hop Mesh Routing: forward packets that are not for this node (payloads stay sealed end to end)
+        if packet.dest_node != self.node_id() {
+            let target = {
+                let table = self.peers.read().await;
+                table
+                    .get(&packet.dest_node)
+                    .filter(|p| p.state == PeerState::Connected)
+                    .map(|p| (p.endpoint, p.tcp.clone()))
+            };
+            if let Some((endpoint, tcp)) = target {
+                info!(
+                    "Mesh Forwarder: routing packet (type {:?}) from {} towards {}",
+                    packet.packet_type, packet.src_node, packet.dest_node
+                );
+                self.send_to_remote(endpoint, &tcp, &packet.encode()).await;
+            }
+            return;
+        }
+
+        match packet.packet_type {
+            PacketType::StunProbe => {}
+            PacketType::HandshakeInit => self.handle_handshake_init(packet, remote, link).await,
+            PacketType::HandshakeResp => self.handle_handshake_resp(packet, remote, link).await,
+
+            PacketType::PairRequest => {
+                info!("Incoming connection request from {} at {}", packet.src_node, remote);
+                let mut req_guard = self.pending_request.write().await;
+                *req_guard = Some(PendingConnectionRequest {
+                    node_id: packet.src_node.to_string(),
+                    endpoint: remote.to_string(),
+                });
+            }
+
+            PacketType::PairAccept => {
+                info!("Connection request accepted by {} at {}", packet.src_node, remote);
+                // Only meaningful for a request we sent: the peer must already be in our table.
+                let known = {
+                    let mut table = self.peers.write().await;
+                    match table.get_mut(&packet.src_node) {
+                        Some(p) => {
+                            p.endpoint = remote;
+                            if p.state != PeerState::Connected {
+                                p.state = PeerState::Punching;
+                            }
+                            p.last_seen = std::time::Instant::now();
+                            p.session.clone()
+                        }
+                        None => return,
+                    }
+                };
+                // Exchange keys so traffic can be authenticated and encrypted
+                if let Ok(p) = self.build_packet(PacketType::HandshakeInit, packet.src_node, known.as_deref(), &[]) {
+                    self.send_to_remote(remote, &link, &p.encode()).await;
+                }
+            }
+
+            PacketType::PairReject => {
+                warn!("Connection request rejected by {} at {}", packet.src_node, remote);
+            }
+
+            PacketType::Data
+            | PacketType::KeepAlive
+            | PacketType::ChatMessage
+            | PacketType::ClipboardSync
+            | PacketType::ExitNodeRoute => self.handle_sealed(packet, remote, link).await,
+        }
+    }
+
+    async fn handle_handshake_init(self: &Arc<Self>, packet: Packet, remote: SocketAddr, link: Option<LinkTx>) {
+        let src = packet.src_node;
+        info!("Received HandshakeInit from {src} at {remote}");
+
+        let Some(pk) = key_from_payload(&packet.payload) else { return };
+        if node_id_of(&pk) != src {
+            self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+            warn!("HandshakeInit from {remote} rejected: NodeId does not match its public key");
+            return;
+        }
+
+        let session = Arc::new(SessionKeys::derive(&self.identity, &pk));
+        let aad = packet_aad(PacketType::HandshakeInit, &src, &packet.dest_node);
+        let proven = if packet.payload.len() > 32 {
+            match session.open(packet.sequence, &aad, &packet.payload[32..]) {
+                Some(plain) if plain == HANDSHAKE_PROOF => true,
+                _ => {
+                    self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+                    warn!("HandshakeInit from {remote} rejected: invalid proof of key possession");
+                    return;
+                }
+            }
+        } else {
+            false
+        };
+
+        {
+            let mut table = self.peers.write().await;
+            match table.get_mut(&src) {
+                Some(p) => {
+                    if let Some(existing) = p.public_key {
+                        if existing != pk {
+                            self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+                            warn!("HandshakeInit from {remote} rejected: public key differs from the known one");
+                            return;
+                        }
+                    } else {
+                        p.set_public_key(&self.identity, pk);
+                    }
+                    if proven {
+                        if !p.replay.accept(packet.sequence) {
+                            return; // duplicate of a probe already answered
+                        }
+                        note_transport(p, remote, &link);
+                        p.state = PeerState::Connected;
+                        p.last_seen = std::time::Instant::now();
+                    }
+                }
+                None => {
+                    let mut new_peer = Peer::new(src, remote);
+                    new_peer.set_public_key(&self.identity, pk);
+                    if proven {
+                        new_peer.replay.accept(packet.sequence);
+                        new_peer.state = PeerState::Connected;
+                        note_transport(&mut new_peer, remote, &link);
+                    } else {
+                        new_peer.state = PeerState::Punching;
+                    }
+                    table.insert(new_peer);
+                }
+            }
+        }
+
+        if proven && !self.is_ephemeral {
+            record_known_peer(&src.to_string(), &remote.to_string());
+        }
+
+        // Answer straight to the address the packet came from (this also punches our side of the NAT)
+        if let Ok(resp) = self.build_packet(PacketType::HandshakeResp, src, Some(&session), &[]) {
+            self.send_to_remote(remote, &link, &resp.encode()).await;
+        }
+    }
+
+    async fn handle_handshake_resp(self: &Arc<Self>, packet: Packet, remote: SocketAddr, link: Option<LinkTx>) {
+        let src = packet.src_node;
+        let Some(pk) = key_from_payload(&packet.payload) else { return };
+        if node_id_of(&pk) != src || packet.payload.len() <= 32 {
+            self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        let session = Arc::new(SessionKeys::derive(&self.identity, &pk));
+        let aad = packet_aad(PacketType::HandshakeResp, &src, &packet.dest_node);
+        match session.open(packet.sequence, &aad, &packet.payload[32..]) {
+            Some(plain) if plain == HANDSHAKE_PROOF => {}
+            _ => {
+                self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+                warn!("HandshakeResp from {remote} rejected: invalid proof of key possession");
+                return;
+            }
+        }
+
+        let first_key = {
+            let mut table = self.peers.write().await;
+            let Some(p) = table.get_mut(&src) else { return }; // we never asked this node
+            let first_key = p.public_key.is_none();
+            if let Some(existing) = p.public_key {
+                if existing != pk {
+                    self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+                    warn!("HandshakeResp from {remote} rejected: public key differs from the known one");
+                    return;
+                }
+            } else {
+                p.set_public_key(&self.identity, pk);
+            }
+            if !p.replay.accept(packet.sequence) {
+                return;
+            }
+            note_transport(p, remote, &link);
+            p.state = PeerState::Connected;
+            p.last_seen = std::time::Instant::now();
+            first_key
+        };
+
+        info!("Received HandshakeResp from {src} at {remote}! Authenticated connection established.");
+        if !self.is_ephemeral {
+            record_known_peer(&src.to_string(), &remote.to_string());
+        }
+
+        if first_key {
+            // The other side has not yet seen a proof from us: a sealed packet completes the exchange
+            let _ = self.send_packet(src, PacketType::KeepAlive, b"HELLO").await;
+        }
+    }
+
+    /// Decrypts and dispatches Data / KeepAlive / Chat / Clipboard / ExitNodeRoute packets.
+    async fn handle_sealed(self: &Arc<Self>, packet: Packet, remote: SocketAddr, link: Option<LinkTx>) {
+        let src = packet.src_node;
+        let session = {
+            let table = self.peers.read().await;
+            table.get(&src).and_then(|p| p.session.clone())
+        };
+        let Some(session) = session else {
+            self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+            return; // unknown peer: no key, nothing to authenticate against
+        };
+
+        let aad = packet_aad(packet.packet_type, &src, &packet.dest_node);
+        let Some(plain) = session.open(packet.sequence, &aad, &packet.payload) else {
+            self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+            return; // forged, corrupted or tampered packet
+        };
+
+        {
+            let mut table = self.peers.write().await;
+            let Some(p) = table.get_mut(&src) else { return };
+            if !p.replay.accept(packet.sequence) {
+                self.diag.rejected.fetch_add(1, Ordering::Relaxed);
+                return; // replayed packet
+            }
+            note_transport(p, remote, &link);
+            p.state = PeerState::Connected;
+            p.last_seen = std::time::Instant::now();
+        }
+
+        match packet.packet_type {
+            PacketType::KeepAlive => {}
+
+            PacketType::Data => {
+                // Forward incoming raw IP packet directly to local TUN device
+                let guard = self.adapter.read().await;
+                if let Some(adapter) = guard.as_ref() {
+                    let _ = adapter.write_packet(&plain).await;
+                }
+            }
+
+            PacketType::ChatMessage => {
+                if let Ok(text) = String::from_utf8(plain) {
+                    info!("Chat message received from {}: {}", src, text);
+                    let ts = unix_secs();
+                    let mut chat_guard = self.chat_messages.write().await;
+                    chat_guard.push(ChatMessageEntry {
+                        id: format!("{}-{}", src, ts),
+                        sender: src.to_string(),
+                        recipient: self.node_id().to_string(),
+                        text,
+                        timestamp_secs: ts,
+                    });
+                }
+            }
+
+            PacketType::ClipboardSync => {
+                if let Ok(text) = String::from_utf8(plain) {
+                    info!("Clipboard received from {}: {} chars", src, text.len());
+                    let mut clip_guard = self.last_clipboard.write().await;
+                    *clip_guard = Some(ClipboardEntry {
+                        sender: src.to_string(),
+                        text,
+                        timestamp_secs: unix_secs(),
+                    });
+                }
+            }
+
+            PacketType::ExitNodeRoute => {
+                info!("Exit node routing notification from {}", src);
+            }
+
+            _ => {}
         }
     }
 }

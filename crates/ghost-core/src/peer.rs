@@ -1,7 +1,13 @@
+use ghost_crypto::{IdentityKeypair, ReplayWindow, SessionKeys};
 use ghost_protocol::NodeId;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::mpsc;
+
+/// Outbound side of a TCP fallback link (length-prefixed packets handled by the engine).
+pub type LinkTx = mpsc::Sender<Vec<u8>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeerState {
@@ -9,6 +15,8 @@ pub enum PeerState {
     Punching,
     Connected,
     Relayed,
+    /// Handshake attempts (UDP and TCP fallback) all went unanswered.
+    Unreachable,
 }
 
 impl std::fmt::Display for PeerState {
@@ -18,6 +26,7 @@ impl std::fmt::Display for PeerState {
             Self::Punching => write!(f, "Punching NAT"),
             Self::Connected => write!(f, "Connected (Direct P2P)"),
             Self::Relayed => write!(f, "Relayed"),
+            Self::Unreachable => write!(f, "Unreachable (no reply)"),
         }
     }
 }
@@ -30,6 +39,12 @@ pub struct Peer {
     pub state: PeerState,
     pub last_seen: Instant,
     pub rtt_ms: Option<u32>,
+    /// Packet protection keys, available once the peer's public key is known.
+    pub session: Option<Arc<SessionKeys>>,
+    pub replay: ReplayWindow,
+    /// Set while the peer is reached through the TCP fallback instead of UDP.
+    pub tcp: Option<LinkTx>,
+    pub last_udp: Option<Instant>,
 }
 
 impl Peer {
@@ -41,12 +56,22 @@ impl Peer {
             state: PeerState::Disconnected,
             last_seen: Instant::now(),
             rtt_ms: None,
+            session: None,
+            replay: ReplayWindow::default(),
+            tcp: None,
+            last_udp: None,
         }
     }
 
     pub fn with_public_key(mut self, key: [u8; 32]) -> Self {
         self.public_key = Some(key);
         self
+    }
+
+    /// Stores the peer's public key and derives the packet protection keys from it.
+    pub fn set_public_key(&mut self, local: &IdentityKeypair, key: [u8; 32]) {
+        self.public_key = Some(key);
+        self.session = Some(Arc::new(SessionKeys::derive(local, &key)));
     }
 }
 
@@ -80,6 +105,10 @@ impl PeerTable {
 
     pub fn iter(&self) -> impl Iterator<Item = &Peer> {
         self.peers.values()
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Peer> {
+        self.peers.values_mut()
     }
 
     pub fn len(&self) -> usize {

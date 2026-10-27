@@ -21,6 +21,9 @@
         </div>
       </div>
       <div class="header-status">
+        <button class="btn-theme" id="btn-theme" title="Switch light / dark theme" aria-label="Switch theme">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
         <div class="status-badge" id="status-indicator">
           <span class="status-dot"></span>
           <span id="status-label">Initializing...</span>
@@ -68,13 +71,13 @@
         <div class="card">
           <div class="card-title">Public Endpoint (STUN)</div>
           <div class="card-value font-mono" id="val-endpoint">Resolving...</div>
-          <div class="card-sub">UDP NAT Hole Punching: <span class="green-text">Active</span></div>
+          <div class="card-sub">Link: <span class="green-text" id="val-link-mode">UDP hole punching</span></div>
         </div>
 
         <div class="card">
           <div class="card-title">Node Identifier</div>
           <div class="card-value font-mono text-truncate" id="val-nodeid">Loading...</div>
-          <div class="card-sub">Crypto: <span class="accent-text">Noise_XX (Curve25519)</span></div>
+          <div class="card-sub">Crypto: <span class="accent-text">X25519 + ChaCha20-Poly1305</span></div>
         </div>
       </section>
 
@@ -120,6 +123,19 @@
           </table>
         </div>
       </section>
+
+      <!-- Connectivity Diagnostics -->
+      <details class="diag-section" id="diag-section">
+        <summary class="section-header">
+          <h2>Connectivity Diagnostics</h2>
+        </summary>
+        <div class="ghostdrop-card">
+          <div class="diag-grid" id="diag-grid">
+            <div class="diag-item"><span class="k">Loading</span><span class="v">...</span></div>
+          </div>
+          <div class="diag-hints" id="diag-hints"></div>
+        </div>
+      </details>
 
       <!-- Known Devices (Saved Pairs) Section -->
       <section class="known-devices-section" style="margin-top: 24px;">

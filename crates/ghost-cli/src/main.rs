@@ -481,12 +481,12 @@ async fn main() -> anyhow::Result<()> {
             let engine = Arc::new(MeshEngine::bind(local_port).await?);
             engine.add_peer(dest_node, endpoint).await;
 
-            info!("Sending ping packet to {dest_node} at {endpoint}...");
+            info!("Sending handshake probe to {dest_node} at {endpoint}...");
             engine
-                .send_packet(dest_node, PacketType::KeepAlive, b"GHOST_PING")
+                .send_packet(dest_node, PacketType::HandshakeInit, &[])
                 .await?;
 
-            println!("[OK] Ping packet dispatched successfully to {endpoint}");
+            println!("[OK] Handshake probe dispatched successfully to {endpoint}");
         }
     }
 

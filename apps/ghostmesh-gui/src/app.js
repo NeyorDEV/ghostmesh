@@ -83,9 +83,14 @@ async function updateStatus() {
       }
     }
   } catch (err) {
-    elStatusLabel.textContent = 'Standby (Connecting...)';
-    elNodeId.textContent = 'Simulated Local Node';
-    elEndpoint.textContent = '0.0.0.0:4242';
+    const msg = String(err || '');
+    const failed = msg.startsWith('Engine failed');
+    elStatusLabel.textContent = failed ? msg : 'Starting mesh engine...';
+    elStatusLabel.title = msg;
+    if (failed) {
+      elNodeId.textContent = 'Unavailable';
+      elEndpoint.textContent = 'Unavailable';
+    }
   }
 }
 
@@ -131,7 +136,7 @@ async function updatePeers() {
       <tr>
         <td class="font-mono text-truncate" style="max-width: 180px;">${p.node_id}</td>
         <td class="font-mono">${p.endpoint}</td>
-        <td><span class="${p.state.includes('Connected') ? 'green-text' : 'text-muted'}">${p.state}</span></td>
+        <td><span class="${p.state.includes('Connected') ? 'green-text' : (p.state.startsWith('Unreachable') ? 'bad-text' : 'text-muted')}">${p.state}</span></td>
         <td>${formatLastSeen(p.last_seen_secs)}</td>
         <td><div class="peer-actions">
           <button class="btn-rdp" onclick="launchRdp('${p.node_id}')" title="Windows Remote Desktop">RDP</button>
@@ -809,3 +814,72 @@ setInterval(updateSyncStatus, 2500);
 setInterval(updateKnownDevices, 4000);
 setInterval(updateIncomingRequests, 1500);
 setInterval(checkIncomingClipboard, 1500);
+
+// ---- Connectivity diagnostics -------------------------------------------------
+const elDiagGrid = document.getElementById('diag-grid');
+const elDiagHints = document.getElementById('diag-hints');
+const elLinkMode = document.getElementById('val-link-mode');
+
+function escapeHtml(v) {
+  return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function diagItem(label, value, cls) {
+  return `<div class="diag-item"><span class="k">${escapeHtml(label)}</span><span class="v font-mono ${cls || ''}">${escapeHtml(value)}</span></div>`;
+}
+
+function mappingText(v) {
+  return v === 'ok' || v.startsWith('ok ') ? 'OK' : (v || '-');
+}
+
+async function updateDiagnostics() {
+  const section = document.getElementById('diag-section');
+  if (!section || !section.open) return;
+  try {
+    const d = await invoke('get_diagnostics');
+    if (!d) return;
+    const mapped = d.mapping_done ? (d.mapping_method ? `${d.mapping_method} (UDP ${d.udp_port})` : 'Failed') : 'In progress...';
+    elDiagGrid.innerHTML = [
+      diagItem('Public endpoint', d.public_endpoint),
+      diagItem('STUN', d.stun_ok ? 'OK' : 'Unreachable', d.stun_ok ? 'ok-text' : 'bad-text'),
+      diagItem('Router port mapping', mapped, d.mapping_method ? 'ok-text' : (d.mapping_done ? 'bad-text' : '')),
+      diagItem('UPnP', mappingText(d.upnp)),
+      diagItem('NAT-PMP', mappingText(d.natpmp)),
+      diagItem('PCP', mappingText(d.pcp)),
+      diagItem('Router WAN IP', d.router_external_ip || 'unknown'),
+      diagItem('TCP fallback', d.tcp_port ? `listening on ${d.tcp_port}` + (d.tcp_external_ports.length ? `, router ports ${d.tcp_external_ports.join(', ')}` : '') : 'unavailable'),
+      diagItem('Packets received', `UDP ${d.udp_packets_rx} / TCP ${d.tcp_packets_rx}`),
+      diagItem('Rejected packets', String(d.rejected_packets)),
+      diagItem('Last packet', d.last_packet_secs_ago === null || d.last_packet_secs_ago === undefined ? 'never' : formatLastSeen(d.last_packet_secs_ago)),
+      diagItem('TCP links', String(d.tcp_links)),
+    ].join('');
+
+    elDiagHints.innerHTML = d.hints.length
+      ? d.hints.map(h => `<div class="diag-hint">${escapeHtml(h)}</div>`).join('')
+      : '<div class="diag-hint diag-ok">No connectivity problem detected.</div>';
+
+    if (elLinkMode) {
+      elLinkMode.textContent = d.tcp_links > 0 ? 'TCP fallback active' : 'UDP hole punching';
+    }
+  } catch (_) {
+    // engine not ready yet
+  }
+}
+
+document.getElementById('diag-section')?.addEventListener('toggle', updateDiagnostics);
+setInterval(updateDiagnostics, 2500);
+
+// ---- Theme (light / dark) -----------------------------------------------------
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('ghostmesh-theme', theme); } catch (_) {}
+}
+
+(function initTheme() {
+  let theme = 'dark';
+  try { theme = localStorage.getItem('ghostmesh-theme') || 'dark'; } catch (_) {}
+  applyTheme(theme === 'light' ? 'light' : 'dark');
+  document.getElementById('btn-theme')?.addEventListener('click', () => {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+  });
+})();
