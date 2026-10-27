@@ -46,6 +46,27 @@ const tmStats = document.getElementById('tm-stats');
 let cachedPeers = [];
 let activeExitNode = null;
 
+let cachedTicket = null;
+let cachedQrSvg = null;
+
+async function prefetchInviteTicket() {
+  if (cachedTicket && cachedQrSvg) return;
+  try {
+    const ticket = await invoke('create_invite');
+    if (ticket) {
+      cachedTicket = ticket;
+      elTicketText.textContent = ticket;
+      const qrSvg = await invoke('generate_ticket_qr', { ticket });
+      if (qrSvg) {
+        cachedQrSvg = qrSvg;
+        ticketQr.innerHTML = qrSvg;
+      }
+    }
+  } catch (_) {
+    // Retry on next cycle
+  }
+}
+
 async function updateStatus() {
   try {
     const status = await invoke('get_node_status');
@@ -57,6 +78,9 @@ async function updateStatus() {
         elVip.textContent = status.virtual_ip;
       }
       elPeersCount.textContent = status.peers_count;
+      if (status.is_active && !cachedTicket) {
+        prefetchInviteTicket();
+      }
     }
   } catch (err) {
     elStatusLabel.textContent = 'Standby (Connecting...)';
@@ -247,25 +271,18 @@ const syncStatusBadge = document.getElementById('sync-status-badge');
 
 // Modal handling
 btnInvite.addEventListener('click', async () => {
+  modalInvite.style.display = 'flex';
   modalInvite.classList.add('active');
-  elTicketText.textContent = 'Generating encrypted ticket...';
-  ticketQr.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Generating QR Code...</div>';
-  try {
-    const ticket = await invoke('create_invite');
-    elTicketText.textContent = ticket || 'gm1_simulated_ticket_for_testing';
 
-    if (ticket) {
-      try {
-        const qrSvg = await invoke('generate_ticket_qr', { ticket });
-        if (qrSvg) {
-          ticketQr.innerHTML = qrSvg;
-        }
-      } catch (err) {
-        ticketQr.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">QR Code unavailable</div>';
-      }
+  if (cachedTicket) {
+    elTicketText.textContent = cachedTicket;
+    if (cachedQrSvg) {
+      ticketQr.innerHTML = cachedQrSvg;
     }
-  } catch (e) {
-    elTicketText.textContent = 'Failed to generate ticket: ' + e;
+  } else {
+    elTicketText.textContent = 'Generating encrypted ticket...';
+    ticketQr.innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Generating QR Code...</div>';
+    await prefetchInviteTicket();
   }
 });
 
@@ -315,18 +332,43 @@ async function updateSyncStatus() {
 
 btnJoin.addEventListener('click', () => {
   elInputTicket.value = '';
+  modalJoin.style.display = 'flex';
   modalJoin.classList.add('active');
 });
+
+function closeModal(el) {
+  if (el) {
+    el.classList.remove('active');
+    el.style.display = 'none';
+    if (el.id === 'modal-chat' && chatPollInterval) {
+      clearInterval(chatPollInterval);
+      chatPollInterval = null;
+    }
+  }
+}
 
 document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = btn.getAttribute('data-close');
     const el = document.getElementById(target);
-    if (el) {
-      el.classList.remove('active');
-      el.style.display = 'none';
+    closeModal(el);
+  });
+});
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      closeModal(overlay);
     }
   });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      closeModal(overlay);
+    });
+  }
 });
 
 btnCopyTicket.addEventListener('click', () => {
@@ -345,7 +387,7 @@ btnSubmitJoin.addEventListener('click', async () => {
   btnSubmitJoin.textContent = 'Connecting...';
   try {
     await invoke('join_peer', { ticket });
-    modalJoin.classList.remove('active');
+    closeModal(modalJoin);
     setTimeout(updatePeers, 500);
   } catch (e) {
     alert('Join error: ' + e);
@@ -514,6 +556,7 @@ window.openChat = function(nodeId) {
   activeChatPeer = nodeId;
   chatPeerIdEl.textContent = 'Node: ' + nodeId;
   modalChat.style.display = 'flex';
+  modalChat.classList.add('active');
   chatMessagesContainer.innerHTML = '<div class="chat-empty">Loading secure chat...</div>';
   updateChatMessages();
 

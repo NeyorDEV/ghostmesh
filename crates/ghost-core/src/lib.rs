@@ -45,6 +45,7 @@ pub struct MeshEngine {
     pub identity: IdentityKeypair,
     pub socket: Arc<UdpSocket>,
     pub public_addr: SocketAddr,
+    pub lan_endpoints: Vec<SocketAddr>,
     pub peers: Arc<RwLock<PeerTable>>,
     pub adapter: Arc<RwLock<Option<Arc<VirtualAdapter>>>>,
     pub relay: Arc<RwLock<Option<RelayClient>>>,
@@ -185,11 +186,13 @@ impl MeshEngine {
         let chat_messages = Arc::new(RwLock::new(Vec::new()));
         let last_clipboard = Arc::new(RwLock::new(None));
         let active_exit_node = Arc::new(RwLock::new(None));
+        let lan_endpoints = get_local_lan_endpoints(actual_port);
 
         Ok(Self {
             identity,
             socket,
             public_addr,
+            lan_endpoints,
             peers,
             adapter,
             relay,
@@ -316,11 +319,13 @@ impl MeshEngine {
         let chat_messages = Arc::new(RwLock::new(Vec::new()));
         let last_clipboard = Arc::new(RwLock::new(None));
         let active_exit_node = Arc::new(RwLock::new(None));
+        let lan_endpoints = get_local_lan_endpoints(actual_port);
 
         Ok(Self {
             identity,
             socket,
             public_addr,
+            lan_endpoints,
             peers,
             adapter,
             relay,
@@ -337,10 +342,8 @@ impl MeshEngine {
     }
 
     pub fn create_invite(&self) -> InviteTicket {
-        let local_port = self.socket.local_addr().map(|a| a.port()).unwrap_or(4242);
-        let lan_endpoints = get_local_lan_endpoints(local_port);
         InviteTicket::new(self.node_id(), self.public_addr, self.identity.public)
-            .with_lan_endpoints(lan_endpoints)
+            .with_lan_endpoints(self.lan_endpoints.clone())
     }
 
     pub async fn add_peer(&self, node_id: NodeId, endpoint: SocketAddr) {
