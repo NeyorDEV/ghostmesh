@@ -39,14 +39,26 @@ pub fn get_transfers_dir() -> PathBuf {
 }
 
 pub async fn start_ghostdrop_server(status_state: Arc<RwLock<Option<TransferStatus>>>) {
-    let bind_addr = format!("0.0.0.0:{GHOSTDROP_PORT}");
-    let listener = match TcpListener::bind(&bind_addr).await {
-        Ok(l) => {
-            info!("GhostDrop TCP file transfer server listening on {bind_addr}");
-            l
+    let mut bound_listener = None;
+
+    for port in [GHOSTDROP_PORT, GHOSTDROP_PORT + 2, GHOSTDROP_PORT + 4, GHOSTDROP_PORT + 6] {
+        let addr = format!("0.0.0.0:{port}");
+        match TcpListener::bind(&addr).await {
+            Ok(l) => {
+                info!("GhostDrop TCP file transfer server listening on {addr}");
+                bound_listener = Some(l);
+                break;
+            }
+            Err(e) => {
+                warn!("GhostDrop port {port} unavailable ({e}), trying next fallback port...");
+            }
         }
-        Err(e) => {
-            warn!("Failed to bind GhostDrop TCP server on {bind_addr}: {e}");
+    }
+
+    let listener = match bound_listener {
+        Some(l) => l,
+        None => {
+            warn!("Failed to bind GhostDrop TCP server on any fallback port");
             return;
         }
     };

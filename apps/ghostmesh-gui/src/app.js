@@ -696,7 +696,7 @@ async function checkForUpdates() {
     if (res.ok) {
       const data = await res.json();
       const latestTag = data.tag_name || '';
-      const currentVer = 'v0.2.2';
+      const currentVer = 'v0.2.4';
       if (latestTag && latestTag !== currentVer && latestTag > currentVer) {
         updateTag.textContent = latestTag;
         updateAlert.style.display = 'flex';
@@ -712,6 +712,8 @@ btnCloseUpdate.addEventListener('click', () => {
 });
 
 btnRefresh.addEventListener('click', () => {
+  btnRefresh.classList.add('spinning');
+  setTimeout(() => btnRefresh.classList.remove('spinning'), 600);
   updateStatus();
   updatePeers();
   updateTransferMonitor();

@@ -23,6 +23,8 @@ pub struct InviteTicket {
     pub endpoint: SocketAddr,
     #[serde(with = "hex_32")]
     pub public_key: [u8; 32],
+    #[serde(default)]
+    pub lan_endpoints: Vec<SocketAddr>,
 }
 
 impl InviteTicket {
@@ -31,7 +33,26 @@ impl InviteTicket {
             node_id,
             endpoint,
             public_key,
+            lan_endpoints: Vec::new(),
         }
+    }
+
+    pub fn with_lan_endpoints(mut self, lan_endpoints: Vec<SocketAddr>) -> Self {
+        self.lan_endpoints = lan_endpoints;
+        self
+    }
+
+    pub fn all_endpoints(&self) -> Vec<SocketAddr> {
+        let mut endpoints = Vec::new();
+        for &lan in &self.lan_endpoints {
+            if !endpoints.contains(&lan) {
+                endpoints.push(lan);
+            }
+        }
+        if !endpoints.contains(&self.endpoint) {
+            endpoints.push(self.endpoint);
+        }
+        endpoints
     }
 
     pub fn to_ticket_string(&self) -> String {
@@ -100,5 +121,23 @@ mod tests {
 
         let parsed: InviteTicket = ticket_str.parse().expect("Failed to parse ticket string");
         assert_eq!(parsed, ticket);
+        assert_eq!(parsed.all_endpoints(), vec![endpoint]);
+    }
+
+    #[test]
+    fn test_ticket_with_lan_endpoints() {
+        let node_id = NodeId::new([0xCD; 16]);
+        let endpoint = "92.171.157.150:4242".parse().unwrap();
+        let pub_key = [0x55; 32];
+        let lan1 = "127.0.0.1:4242".parse().unwrap();
+        let lan2 = "192.168.1.50:4242".parse().unwrap();
+
+        let ticket = InviteTicket::new(node_id, endpoint, pub_key)
+            .with_lan_endpoints(vec![lan1, lan2]);
+        let ticket_str = ticket.to_ticket_string();
+        let parsed: InviteTicket = ticket_str.parse().expect("Failed to parse ticket with lan endpoints");
+
+        assert_eq!(parsed.lan_endpoints, vec![lan1, lan2]);
+        assert_eq!(parsed.all_endpoints(), vec![lan1, lan2, endpoint]);
     }
 }
