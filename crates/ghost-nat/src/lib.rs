@@ -122,7 +122,13 @@ pub async fn forward_port_upnp(local_port: u16, external_port: u16) -> Result<()
     };
 
     let local_socket = SocketAddrV4::new(local_ip, local_port);
-    let gateway = search_gateway(Default::default())
+    // Bind the SSDP search to the interface that actually routes to the Internet,
+    // otherwise multicast may leave through a VPN / virtual adapter and time out.
+    let options = igd::SearchOptions {
+        bind_addr: SocketAddr::V4(SocketAddrV4::new(local_ip, 0)),
+        ..Default::default()
+    };
+    let gateway = search_gateway(options)
         .await
         .map_err(|e| format!("UPnP search failed: {e}"))?;
 
