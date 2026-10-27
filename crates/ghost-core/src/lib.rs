@@ -429,8 +429,9 @@ impl MeshEngine {
         let all_endpoints = ticket.all_endpoints();
         let primary_endpoint = all_endpoints.first().copied().unwrap_or(ticket.endpoint);
 
-        let peer = Peer::new(ticket.node_id, primary_endpoint)
+        let mut peer = Peer::new(ticket.node_id, primary_endpoint)
             .with_public_key(ticket.public_key);
+        peer.state = PeerState::Punching;
         {
             let mut table = self.peers.write().await;
             table.insert(peer);

@@ -38,7 +38,7 @@ async fn get_node_status(state: State<'_, GuiState>) -> Result<NodeStatus, Strin
 
     let peers_count = {
         let table = engine.peers.read().await;
-        table.len()
+        table.iter().filter(|p| p.state == ghost_core::PeerState::Connected).count()
     };
 
     let vip = state.virtual_ip.read().await;
