@@ -283,7 +283,10 @@ impl MeshEngine {
             tokio::spawn(async move {
                 let report = ghost_nat::map_ports(actual_port, tcp_port).await;
                 match &report.method {
-                    Some(m) => info!("{m}: UDP port {actual_port} automatically mapped on router"),
+                    Some(m) => info!(
+                        "{m}: UDP port {actual_port} automatically mapped on router (TCP external ports: {:?}, router WAN IP: {:?})",
+                        report.tcp_ports, report.external_ip
+                    ),
                     None => warn!(
                         "Router port mapping failed (UPnP: {}; NAT-PMP: {}; PCP: {})",
                         report.upnp, report.natpmp, report.pcp
@@ -811,10 +814,17 @@ impl MeshEngine {
                         self.local_udp_port, self.local_udp_port
                     ));
                 }
-                if let (Some(router_ip), Some(public)) = (&r.external_ip, stun_ok.then_some(self.public_addr.ip())) {
-                    if router_ip.to_string() != public.to_string() {
+                if let Some(router_ip) = r.external_ip {
+                    let public = stun_ok.then_some(self.public_addr.ip());
+                    if router_ip.is_private() || router_ip.is_link_local() {
                         hints.push(format!(
-                            "Double NAT / CGNAT detected (router WAN {router_ip} differs from public IP {public}). Inbound connections will fail: ask your ISP for a public IP or use the TCP fallback from the other side."
+                            "Your router is itself behind another router (its WAN address is {router_ip}, a private address). The automatic port opening only reaches the inner router: forward UDP {p} and TCP 443 on the OUTER box (usually your ISP box) to {router_ip}, or set the inner router in bridge / DMZ mode.",
+                            p = self.local_udp_port
+                        ));
+                    } else if public.map(|ip| ip.to_string() != router_ip.to_string()).unwrap_or(false) {
+                        hints.push(format!(
+                            "Carrier-grade NAT suspected (router WAN {router_ip} differs from public IP {}). Inbound connections cannot reach this PC: ask your ISP for a public IP, or connect from this PC to the other one instead.",
+                            public.unwrap()
                         ));
                     }
                 }
