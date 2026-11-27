@@ -61,12 +61,43 @@ Téléchargez les exécutables autonomes directement depuis la **[Dernière Rele
 ```text
 ghostmesh/
 ├── crates/
-│   ├── ghost-protocol/   # Wire format, binary packet serialization & headers
-│   ├── ghost-crypto/     # Noise protocol state machine, key generation & frame encryption
-│   ├── ghost-nat/        # Lightweight STUN client & UDP hole-punching probes
-│   ├── ghost-core/       # Routing table, peer state machine, event loop
-│   └── ghost-cli/        # CLI binary (ghostmesh keygen, invite, join, discover, up)
+│   ├── ghost-protocol/   # Wire formats: packets, tickets, relay frames, rendezvous records
+│   ├── ghost-crypto/     # Identity keys, packet sealing, rekey, signatures, zeroization
+│   ├── ghost-nat/        # STUN, NAT type detection, UPnP / NAT-PMP / PCP
+│   ├── ghost-tun/        # Virtual interface (IPv4 + IPv6), routes, per-peer packet filter
+│   ├── ghost-core/       # Engine: peers, relay & rendezvous clients, rekey, trust, access, DNS
+│   ├── ghost-relay/      # Server: relay + rendezvous (self-hosted, see docs/SELF-HOSTING.md)
+│   ├── ghost-pki/        # Local CA limited to .ghost, HTTPS exposure (ghostmesh serve)
+│   └── ghost-cli/        # CLI binary (ghostmesh ...)
+├── apps/ghostmesh-gui/   # Tauri desktop app
+└── fuzz/                 # cargo-fuzz targets for every network decoder
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the direct / relayed paths, [SECURITY.md](SECURITY.md) for
+the threat model (what a relay sees, what a stolen device can do, how to revoke it) and
+[CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Beyond direct connections
+
+- **Relay** (`ghostmesh relay add host:port#key`): when two devices cannot connect directly (CGNAT,
+  symmetric NAT, strict firewalls), sealed packets go through a relay **you host**. Traffic returns to
+  the direct path by itself when it becomes possible. No relay is configured by default.
+- **Rendezvous** (`ghostmesh rendezvous add host:port`): paired devices find each other again after
+  an address change, without a new ticket.
+- **Diagnostics** (`ghostmesh status`): NAT type, candidate addresses, relay, direct vs relayed peers.
+- **Keys**: the private key lives in the OS vault; sessions are rekeyed every 10 minutes or 1 GiB.
+- **Access control** (`ghostmesh access <node> phone --ports 8765,5173`): per-device profiles on the
+  virtual network, deny by default for restricted profiles.
+- **Revocation** (`ghostmesh revoke <node>`) and expiry (`ghostmesh expire <node> <hours>`).
+- **Names and HTTPS** (`ghostmesh dns ...`, `ghostmesh serve 5173`): `https://<name>.ghost` with a
+  valid certificate; see [docs/HTTPS-NAMES.md](docs/HTTPS-NAMES.md).
+- **Background mode** (`ghostmesh service install`): systemd unit, launchd job or Windows logon task.
+
+> **Note on cryptography.** Packets are protected with ChaCha20-Poly1305 using keys derived from the
+> static X25519 identities, plus ephemeral rekeying. The `Noise_XX` handshake code in `ghost-crypto`
+> is not used by the engine. Details in [SECURITY.md](SECURITY.md).
 
 ---
 
