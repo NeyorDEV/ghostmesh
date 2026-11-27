@@ -36,6 +36,17 @@ impl NodeId {
         &self.0
     }
 
+    /// Derives a deterministic virtual IPv6 address in the unique-local range `fd42:474d::/32`.
+    pub fn to_virtual_ipv6(&self) -> std::net::Ipv6Addr {
+        let mut o = [0u8; 16];
+        o[0] = 0xfd;
+        o[1] = 0x42;
+        o[2] = 0x47;
+        o[3] = 0x4d;
+        o[4..].copy_from_slice(&self.0[..12]);
+        std::net::Ipv6Addr::from(o)
+    }
+
     /// Derives a deterministic virtual IPv4 address in the 10.42.0.0/16 subnet.
     pub fn to_virtual_ip(&self) -> std::net::Ipv4Addr {
         let x = (self.0[14] % 254) + 1;
@@ -56,7 +67,10 @@ impl std::str::FromStr for NodeId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = hex::decode(s).map_err(|e| format!("Invalid hex for NodeId: {e}"))?;
         if bytes.len() != 16 {
-            return Err(format!("NodeId must be 16 bytes (32 hex characters), got {}", bytes.len()));
+            return Err(format!(
+                "NodeId must be 16 bytes (32 hex characters), got {}",
+                bytes.len()
+            ));
         }
         let mut arr = [0u8; 16];
         arr.copy_from_slice(&bytes);
@@ -83,7 +97,6 @@ impl<'de> serde::Deserialize<'de> for NodeId {
     }
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketType {
@@ -98,6 +111,12 @@ pub enum PacketType {
     ChatMessage = 0x09,
     ClipboardSync = 0x0A,
     ExitNodeRoute = 0x0B,
+    /// Sealed: proposes new session keys (ephemeral public key + epoch).
+    Rekey = 0x0C,
+    /// Sealed: answers a `Rekey` with the other ephemeral public key.
+    RekeyAck = 0x0D,
+    /// Sealed: the sender tells the peer that a device was revoked.
+    Revoke = 0x0E,
 }
 
 impl TryFrom<u8> for PacketType {
@@ -116,6 +135,9 @@ impl TryFrom<u8> for PacketType {
             0x09 => Ok(Self::ChatMessage),
             0x0A => Ok(Self::ClipboardSync),
             0x0B => Ok(Self::ExitNodeRoute),
+            0x0C => Ok(Self::Rekey),
+            0x0D => Ok(Self::RekeyAck),
+            0x0E => Ok(Self::Revoke),
             other => Err(ProtocolError::UnknownPacketType(other)),
         }
     }
@@ -232,6 +254,15 @@ mod tests {
         let short = vec![0x47, 0x4D, 0x01];
         let err = Packet::decode(&short).unwrap_err();
         assert_eq!(err, ProtocolError::PacketTooShort(3));
+    }
+
+    #[test]
+    fn test_node_id_virtual_ipv6() {
+        let id = NodeId::new([0xAB; 16]);
+        let ip = id.to_virtual_ipv6();
+        assert_eq!(ip.octets()[..4], [0xfd, 0x42, 0x47, 0x4d]);
+        assert_eq!(ip, id.to_virtual_ipv6());
+        assert_ne!(ip, NodeId::new([0xAC; 16]).to_virtual_ipv6());
     }
 
     #[test]

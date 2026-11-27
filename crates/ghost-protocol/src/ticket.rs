@@ -15,7 +15,12 @@ pub enum TicketError {
     Base64(String),
     #[error("JSON deserialization error: {0}")]
     Json(String),
+    #[error("Ticket is too long to be genuine")]
+    TooLong,
 }
+
+/// A real ticket is a few hundred bytes; anything bigger is refused before decoding.
+pub const MAX_TICKET_LEN: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InviteTicket {
@@ -66,12 +71,18 @@ impl FromStr for InviteTicket {
     type Err = TicketError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let payload = s.trim().strip_prefix("gm1_").ok_or(TicketError::InvalidPrefix)?;
+        let payload = s
+            .trim()
+            .strip_prefix("gm1_")
+            .ok_or(TicketError::InvalidPrefix)?;
+        if payload.len() > MAX_TICKET_LEN {
+            return Err(TicketError::TooLong);
+        }
         let decoded = URL_SAFE_NO_PAD
             .decode(payload)
             .map_err(|e| TicketError::Base64(e.to_string()))?;
-        let ticket: InviteTicket = serde_json::from_slice(&decoded)
-            .map_err(|e| TicketError::Json(e.to_string()))?;
+        let ticket: InviteTicket =
+            serde_json::from_slice(&decoded).map_err(|e| TicketError::Json(e.to_string()))?;
         Ok(ticket)
     }
 }
@@ -132,10 +143,12 @@ mod tests {
         let lan1 = "127.0.0.1:4242".parse().unwrap();
         let lan2 = "192.168.1.50:4242".parse().unwrap();
 
-        let ticket = InviteTicket::new(node_id, endpoint, pub_key)
-            .with_lan_endpoints(vec![lan1, lan2]);
+        let ticket =
+            InviteTicket::new(node_id, endpoint, pub_key).with_lan_endpoints(vec![lan1, lan2]);
         let ticket_str = ticket.to_ticket_string();
-        let parsed: InviteTicket = ticket_str.parse().expect("Failed to parse ticket with lan endpoints");
+        let parsed: InviteTicket = ticket_str
+            .parse()
+            .expect("Failed to parse ticket with lan endpoints");
 
         assert_eq!(parsed.lan_endpoints, vec![lan1, lan2]);
         assert_eq!(parsed.all_endpoints(), vec![lan1, lan2, endpoint]);
