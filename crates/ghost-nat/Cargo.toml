@@ -9,6 +9,7 @@ description = "STUN resolution and UDP NAT traversal for GhostMesh"
 [dependencies]
 tokio = { workspace = true }
 thiserror = { workspace = true }
+serde = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 igd = { version = "0.12.1", features = ["aio"] }

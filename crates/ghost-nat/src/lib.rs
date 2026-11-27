@@ -7,6 +7,15 @@ use tokio::time::timeout;
 
 const STUN_MAGIC_COOKIE: u32 = 0x2112A442;
 pub const DEFAULT_STUN_SERVER: &str = "stun.l.google.com:19302";
+/// Used when the user configures none; at least two are needed to tell the NAT type.
+pub const DEFAULT_STUN_SERVERS: [&str; 3] = [
+    "stun.l.google.com:19302",
+    "stun1.l.google.com:19302",
+    "stun.cloudflare.com:3478",
+];
+
+pub mod traversal;
+pub use traversal::{classify, detect_nat, predict_ports, strategy, NatReport, NatType, Strategy};
 
 #[derive(Error, Debug)]
 pub enum NatError {
@@ -43,7 +52,9 @@ pub async fn discover_public_endpoint(
     let dest_addr: SocketAddr = tokio::net::lookup_host(stun_server)
         .await?
         .next()
-        .ok_or_else(|| NatError::InvalidResponse(format!("Cannot resolve STUN host: {stun_server}")))?;
+        .ok_or_else(|| {
+            NatError::InvalidResponse(format!("Cannot resolve STUN host: {stun_server}"))
+        })?;
 
     socket.send_to(&request, dest_addr).await?;
 
@@ -63,7 +74,9 @@ fn parse_stun_response(data: &[u8], expected_tx_id: &[u8; 12]) -> Result<SocketA
     // Check message type (0x0101 = Binding Success Response)
     let msg_type = u16::from_be_bytes([data[0], data[1]]);
     if msg_type != 0x0101 {
-        return Err(NatError::InvalidResponse(format!("Unexpected message type: 0x{msg_type:04X}")));
+        return Err(NatError::InvalidResponse(format!(
+            "Unexpected message type: 0x{msg_type:04X}"
+        )));
     }
 
     // Check transaction ID
@@ -90,7 +103,8 @@ fn parse_stun_response(data: &[u8], expected_tx_id: &[u8; 12]) -> Result<SocketA
                 let xor_port = u16::from_be_bytes([attr_val[2], attr_val[3]]);
                 let port = xor_port ^ (STUN_MAGIC_COOKIE >> 16) as u16;
 
-                let xor_ip = u32::from_be_bytes([attr_val[4], attr_val[5], attr_val[6], attr_val[7]]);
+                let xor_ip =
+                    u32::from_be_bytes([attr_val[4], attr_val[5], attr_val[6], attr_val[7]]);
                 let ip_u32 = xor_ip ^ STUN_MAGIC_COOKIE;
                 let ip = IpAddr::V4(Ipv4Addr::from(ip_u32));
 
@@ -102,7 +116,9 @@ fn parse_stun_response(data: &[u8], expected_tx_id: &[u8; 12]) -> Result<SocketA
         offset += (attr_len + 3) & !3;
     }
 
-    Err(NatError::InvalidResponse("No XOR-MAPPED-ADDRESS found in STUN response".into()))
+    Err(NatError::InvalidResponse(
+        "No XOR-MAPPED-ADDRESS found in STUN response".into(),
+    ))
 }
 
 /// Attempts to automatically forward a local port on the domestic router using UPnP / IGD.
@@ -191,7 +207,12 @@ fn gateway_candidates(local: Ipv4Addr) -> Vec<Ipv4Addr> {
     gws
 }
 
-async fn upnp_map(local_ip: Ipv4Addr, udp_port: u16, tcp_port: Option<u16>, report: &mut MappingReport) -> bool {
+async fn upnp_map(
+    local_ip: Ipv4Addr,
+    udp_port: u16,
+    tcp_port: Option<u16>,
+    report: &mut MappingReport,
+) -> bool {
     use igd::aio::search_gateway;
     use igd::PortMappingProtocol;
     use std::net::SocketAddrV4;
@@ -252,8 +273,15 @@ async fn upnp_map(local_ip: Ipv4Addr, udp_port: u16, tcp_port: Option<u16>, repo
 }
 
 /// RFC 6886 NAT-PMP request/response exchange. `opcode` 1 = UDP, 2 = TCP.
-async fn natpmp_request(gw: Ipv4Addr, opcode: u8, internal: u16, external: u16) -> Result<u16, String> {
-    let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| e.to_string())?;
+async fn natpmp_request(
+    gw: Ipv4Addr,
+    opcode: u8,
+    internal: u16,
+    external: u16,
+) -> Result<u16, String> {
+    let socket = UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(|e| e.to_string())?;
     let mut req = [0u8; 12];
     req[1] = opcode;
     req[4..6].copy_from_slice(&internal.to_be_bytes());
@@ -266,7 +294,9 @@ async fn natpmp_request(gw: Ipv4Addr, opcode: u8, internal: u16, external: u16) 
             .send_to(&req, SocketAddr::new(IpAddr::V4(gw), 5351))
             .await
             .map_err(|e| e.to_string())?;
-        if let Ok(Ok((n, _))) = timeout(Duration::from_millis(600), socket.recv_from(&mut buf)).await {
+        if let Ok(Ok((n, _))) =
+            timeout(Duration::from_millis(600), socket.recv_from(&mut buf)).await
+        {
             if n >= 16 && buf[1] == opcode + 128 {
                 let result = u16::from_be_bytes([buf[2], buf[3]]);
                 if result != 0 {
@@ -284,8 +314,13 @@ async fn natpmp_external_ip(gw: Ipv4Addr) -> Option<Ipv4Addr> {
     let req = [0u8, 0u8];
     let mut buf = [0u8; 16];
     for _ in 0..2 {
-        socket.send_to(&req, SocketAddr::new(IpAddr::V4(gw), 5351)).await.ok()?;
-        if let Ok(Ok((n, _))) = timeout(Duration::from_millis(500), socket.recv_from(&mut buf)).await {
+        socket
+            .send_to(&req, SocketAddr::new(IpAddr::V4(gw), 5351))
+            .await
+            .ok()?;
+        if let Ok(Ok((n, _))) =
+            timeout(Duration::from_millis(500), socket.recv_from(&mut buf)).await
+        {
             if n >= 12 && buf[1] == 128 && buf[2] == 0 && buf[3] == 0 {
                 return Some(Ipv4Addr::new(buf[8], buf[9], buf[10], buf[11]));
             }
@@ -294,7 +329,12 @@ async fn natpmp_external_ip(gw: Ipv4Addr) -> Option<Ipv4Addr> {
     None
 }
 
-async fn natpmp_map(local_ip: Ipv4Addr, udp_port: u16, tcp_port: Option<u16>, report: &mut MappingReport) -> bool {
+async fn natpmp_map(
+    local_ip: Ipv4Addr,
+    udp_port: u16,
+    tcp_port: Option<u16>,
+    report: &mut MappingReport,
+) -> bool {
     for gw in gateway_candidates(local_ip) {
         if natpmp_request(gw, 1, udp_port, udp_port).await.is_err() {
             continue;
@@ -319,7 +359,13 @@ async fn natpmp_map(local_ip: Ipv4Addr, udp_port: u16, tcp_port: Option<u16>, re
 }
 
 /// RFC 6887 PCP MAP request. `protocol` is the IANA number (17 = UDP, 6 = TCP).
-fn pcp_map_request(local_ip: Ipv4Addr, nonce: [u8; 12], protocol: u8, internal: u16, external: u16) -> [u8; 60] {
+fn pcp_map_request(
+    local_ip: Ipv4Addr,
+    nonce: [u8; 12],
+    protocol: u8,
+    internal: u16,
+    external: u16,
+) -> [u8; 60] {
     let mut req = [0u8; 60];
     req[0] = 2; // version
     req[1] = 1; // MAP opcode, request
@@ -334,8 +380,16 @@ fn pcp_map_request(local_ip: Ipv4Addr, nonce: [u8; 12], protocol: u8, internal: 
     req
 }
 
-async fn pcp_request(gw: Ipv4Addr, local_ip: Ipv4Addr, protocol: u8, internal: u16, external: u16) -> Result<u16, String> {
-    let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| e.to_string())?;
+async fn pcp_request(
+    gw: Ipv4Addr,
+    local_ip: Ipv4Addr,
+    protocol: u8,
+    internal: u16,
+    external: u16,
+) -> Result<u16, String> {
+    let socket = UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(|e| e.to_string())?;
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce);
     let req = pcp_map_request(local_ip, nonce, protocol, internal, external);
@@ -346,7 +400,9 @@ async fn pcp_request(gw: Ipv4Addr, local_ip: Ipv4Addr, protocol: u8, internal: u
             .send_to(&req, SocketAddr::new(IpAddr::V4(gw), 5351))
             .await
             .map_err(|e| e.to_string())?;
-        if let Ok(Ok((n, _))) = timeout(Duration::from_millis(600), socket.recv_from(&mut buf)).await {
+        if let Ok(Ok((n, _))) =
+            timeout(Duration::from_millis(600), socket.recv_from(&mut buf)).await
+        {
             if n >= 60 && buf[0] == 2 && buf[1] == 0x81 && buf[24..36] == nonce {
                 if buf[3] != 0 {
                     return Err(format!("PCP result code {}", buf[3]));
@@ -358,9 +414,17 @@ async fn pcp_request(gw: Ipv4Addr, local_ip: Ipv4Addr, protocol: u8, internal: u
     Err("no answer".into())
 }
 
-async fn pcp_map(local_ip: Ipv4Addr, udp_port: u16, tcp_port: Option<u16>, report: &mut MappingReport) -> bool {
+async fn pcp_map(
+    local_ip: Ipv4Addr,
+    udp_port: u16,
+    tcp_port: Option<u16>,
+    report: &mut MappingReport,
+) -> bool {
     for gw in gateway_candidates(local_ip) {
-        if pcp_request(gw, local_ip, 17, udp_port, udp_port).await.is_err() {
+        if pcp_request(gw, local_ip, 17, udp_port, udp_port)
+            .await
+            .is_err()
+        {
             continue;
         }
         if let Some(tcp_local) = tcp_port {
