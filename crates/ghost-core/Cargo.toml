@@ -19,3 +19,21 @@ hex = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 bytes = { workspace = true }
+rand = { workspace = true }
+zeroize = { version = "1", features = ["derive"] }
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
+
+[dev-dependencies]
+ghost-relay = { path = "../ghost-relay" }
+ghost-crypto = { path = "../ghost-crypto" }
+hex = { workspace = true }

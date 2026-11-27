@@ -7,7 +7,11 @@ use std::time::Duration;
 #[tokio::test]
 async fn test_two_nodes_direct_pairing() {
     // 1. Bind Alice on local port 15001 with ephemeral identity
-    let alice = Arc::new(MeshEngine::bind_ephemeral(15001).await.expect("Failed to bind Alice"));
+    let alice = Arc::new(
+        MeshEngine::bind_ephemeral(15001)
+            .await
+            .expect("Failed to bind Alice"),
+    );
     let mut alice_ticket = alice.create_invite();
     // For local test, override public endpoint to localhost to avoid loopback NAT hairpinning
     alice_ticket.endpoint = "127.0.0.1:15001".parse().unwrap();
@@ -20,7 +24,11 @@ async fn test_two_nodes_direct_pairing() {
 
     // 2. Bob parses Alice's ticket and joins from port 15002 with independent ephemeral identity
     let parsed_ticket: InviteTicket = ticket_str.parse().expect("Failed to parse ticket");
-    let bob = Arc::new(MeshEngine::bind_ephemeral(15002).await.expect("Failed to bind Bob"));
+    let bob = Arc::new(
+        MeshEngine::bind_ephemeral(15002)
+            .await
+            .expect("Failed to bind Bob"),
+    );
 
     let bob_clone = Arc::clone(&bob);
     tokio::spawn(async move {
@@ -28,7 +36,9 @@ async fn test_two_nodes_direct_pairing() {
     });
 
     // Bob triggers join routine towards Alice
-    bob.join_ticket(parsed_ticket).await.expect("Bob failed to join");
+    bob.join_ticket(parsed_ticket)
+        .await
+        .expect("Bob failed to join");
 
     // Wait up to 3 seconds for handshake completion
     let mut connected = false;
@@ -43,13 +53,20 @@ async fn test_two_nodes_direct_pairing() {
         }
     }
 
-    assert!(connected, "Bob should have established a Direct P2P connection with Alice");
+    assert!(
+        connected,
+        "Bob should have established a Direct P2P connection with Alice"
+    );
 }
 
 #[tokio::test]
 async fn test_pairing_with_unreachable_wan_and_lan_candidates() {
     // 1. Bind Alice on local port 15003 with ephemeral identity
-    let alice = Arc::new(MeshEngine::bind_ephemeral(15003).await.expect("Failed to bind Alice"));
+    let alice = Arc::new(
+        MeshEngine::bind_ephemeral(15003)
+            .await
+            .expect("Failed to bind Alice"),
+    );
     let mut alice_ticket = alice.create_invite();
     // Simulate a public WAN IP that drops traffic (no NAT hairpinning)
     alice_ticket.endpoint = "198.51.100.1:4242".parse().unwrap();
@@ -64,7 +81,11 @@ async fn test_pairing_with_unreachable_wan_and_lan_candidates() {
 
     // 2. Bob parses Alice's ticket and joins from port 15004 with independent ephemeral identity
     let parsed_ticket: InviteTicket = ticket_str.parse().expect("Failed to parse ticket");
-    let bob = Arc::new(MeshEngine::bind_ephemeral(15004).await.expect("Failed to bind Bob"));
+    let bob = Arc::new(
+        MeshEngine::bind_ephemeral(15004)
+            .await
+            .expect("Failed to bind Bob"),
+    );
 
     let bob_clone = Arc::clone(&bob);
     tokio::spawn(async move {
@@ -72,7 +93,9 @@ async fn test_pairing_with_unreachable_wan_and_lan_candidates() {
     });
 
     // Bob triggers join routine towards Alice
-    bob.join_ticket(parsed_ticket).await.expect("Bob failed to join");
+    bob.join_ticket(parsed_ticket)
+        .await
+        .expect("Bob failed to join");
 
     // Wait up to 3 seconds for handshake completion on both sides
     let mut bob_connected = false;
@@ -100,8 +123,14 @@ async fn test_pairing_with_unreachable_wan_and_lan_candidates() {
         }
     }
 
-    assert!(bob_connected, "Bob should connect to Alice via candidate endpoints");
-    assert!(alice_connected, "Alice should also see Bob as Connected in her peer table");
+    assert!(
+        bob_connected,
+        "Bob should connect to Alice via candidate endpoints"
+    );
+    assert!(
+        alice_connected,
+        "Alice should also see Bob as Connected in her peer table"
+    );
 }
 
 #[tokio::test]
@@ -120,8 +149,16 @@ async fn test_two_gui_engines_bind_and_pair() {
         b_clone.run_receive_loop().await;
     });
 
-    println!("Engine A port: {}, node_id: {}", engine_a.socket.local_addr().unwrap().port(), engine_a.node_id());
-    println!("Engine B port: {}, node_id: {}", engine_b.socket.local_addr().unwrap().port(), engine_b.node_id());
+    println!(
+        "Engine A port: {}, node_id: {}",
+        engine_a.socket.local_addr().unwrap().port(),
+        engine_a.node_id()
+    );
+    println!(
+        "Engine B port: {}, node_id: {}",
+        engine_b.socket.local_addr().unwrap().port(),
+        engine_b.node_id()
+    );
 
     // A invites B
     let ticket = engine_a.create_invite();
@@ -132,7 +169,10 @@ async fn test_two_gui_engines_bind_and_pair() {
     let parsed_ticket: InviteTicket = ticket_str.parse().expect("Parse ticket failed");
 
     // B joins A
-    engine_b.join_ticket(parsed_ticket).await.expect("B join_ticket failed");
+    engine_b
+        .join_ticket(parsed_ticket)
+        .await
+        .expect("B join_ticket failed");
 
     // Wait up to 4 seconds
     let mut a_has_b = false;
@@ -180,6 +220,10 @@ async fn test_udp_socket_survives_unreachable_probe() {
     s1.send_to(b"TEST_LOCAL", s2_addr).await.unwrap();
 
     let mut buf = [0u8; 128];
-    let recv_res = tokio::time::timeout(std::time::Duration::from_millis(500), s2.recv_from(&mut buf)).await;
+    let recv_res = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        s2.recv_from(&mut buf),
+    )
+    .await;
     assert!(recv_res.is_ok(), "S2 should have received packet from S1");
 }

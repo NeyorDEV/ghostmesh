@@ -56,9 +56,19 @@ impl GhostSyncEngine {
 
     pub async fn get_status(&self) -> SyncStatus {
         let is_act = *self.is_active.read().await;
-        let dir = self.watched_dir.read().await.as_ref().map(|p| p.to_string_lossy().to_string());
+        let dir = self
+            .watched_dir
+            .read()
+            .await
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string());
         let count = self.file_manifest.read().await.len();
-        let last = self.last_sync.read().await.as_ref().map(|t| t.elapsed().as_secs());
+        let last = self
+            .last_sync
+            .read()
+            .await
+            .as_ref()
+            .map(|t| t.elapsed().as_secs());
 
         let msg = if is_act {
             if let Some(ref d) = dir {
@@ -113,5 +123,11 @@ impl GhostSyncEngine {
         }
 
         changed_files
+    }
+}
+
+impl Default for GhostSyncEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }

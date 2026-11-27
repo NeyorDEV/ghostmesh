@@ -26,10 +26,18 @@ async fn wait_connected(from: &Arc<MeshEngine>, to: &Arc<MeshEngine>, secs: u64)
 
 async fn pair(alice: &Arc<MeshEngine>, bob: &Arc<MeshEngine>) {
     let mut ticket = alice.create_invite();
-    ticket.endpoint = format!("127.0.0.1:{}", alice.local_udp_port).parse().unwrap();
+    ticket.endpoint = format!("127.0.0.1:{}", alice.local_udp_port)
+        .parse()
+        .unwrap();
     bob.join_ticket(ticket).await.unwrap();
-    assert!(wait_connected(bob, alice, 6).await, "bob must connect to alice");
-    assert!(wait_connected(alice, bob, 6).await, "alice must see bob connected");
+    assert!(
+        wait_connected(bob, alice, 6).await,
+        "bob must connect to alice"
+    );
+    assert!(
+        wait_connected(alice, bob, 6).await,
+        "alice must see bob connected"
+    );
 }
 
 #[tokio::test]
@@ -38,11 +46,16 @@ async fn test_chat_is_delivered_after_authenticated_handshake() {
     let bob = engine(15202).await;
     pair(&alice, &bob).await;
 
-    bob.send_chat_message(alice.node_id(), "bonjour alice").await.unwrap();
+    bob.send_chat_message(alice.node_id(), "bonjour alice")
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(400)).await;
 
     let msgs = alice.chat_messages.read().await;
-    assert!(msgs.iter().any(|m| m.text == "bonjour alice"), "alice should receive the sealed chat message");
+    assert!(
+        msgs.iter().any(|m| m.text == "bonjour alice"),
+        "alice should receive the sealed chat message"
+    );
 }
 
 #[tokio::test]
@@ -61,7 +74,10 @@ async fn test_forged_and_plaintext_packets_are_rejected() {
         b"evil".to_vec(),
     );
     attacker
-        .send_to(&forged.encode(), format!("127.0.0.1:{}", alice.local_udp_port))
+        .send_to(
+            &forged.encode(),
+            format!("127.0.0.1:{}", alice.local_udp_port),
+        )
         .await
         .unwrap();
 
@@ -74,12 +90,18 @@ async fn test_forged_and_plaintext_packets_are_rejected() {
         vec![0xAB; 64],
     );
     attacker
-        .send_to(&garbage.encode(), format!("127.0.0.1:{}", alice.local_udp_port))
+        .send_to(
+            &garbage.encode(),
+            format!("127.0.0.1:{}", alice.local_udp_port),
+        )
         .await
         .unwrap();
 
     tokio::time::sleep(Duration::from_millis(400)).await;
-    assert!(alice.chat_messages.read().await.is_empty(), "forged chat must not be delivered");
+    assert!(
+        alice.chat_messages.read().await.is_empty(),
+        "forged chat must not be delivered"
+    );
     assert!(
         alice.diagnostics().await.rejected_packets >= 2,
         "both forged packets must be counted as rejected"
@@ -96,12 +118,18 @@ async fn test_handshake_with_wrong_identity_is_rejected() {
     let pk = vec![0x22u8; 32];
     let init = Packet::new(PacketType::HandshakeInit, fake_id, alice.node_id(), 1, pk);
     attacker
-        .send_to(&init.encode(), format!("127.0.0.1:{}", alice.local_udp_port))
+        .send_to(
+            &init.encode(),
+            format!("127.0.0.1:{}", alice.local_udp_port),
+        )
         .await
         .unwrap();
 
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(alice.peers.read().await.get(&fake_id).is_none(), "spoofed identity must not enter the peer table");
+    assert!(
+        alice.peers.read().await.get(&fake_id).is_none(),
+        "spoofed identity must not enter the peer table"
+    );
 }
 
 #[tokio::test]
@@ -114,15 +142,33 @@ async fn test_tcp_fallback_when_udp_is_blocked() {
 
     {
         let table = bob.peers.read().await;
-        assert!(table.get(&alice.node_id()).unwrap().tcp.is_some(), "bob must reach alice through TCP");
+        assert!(
+            table.get(&alice.node_id()).unwrap().tcp.is_some(),
+            "bob must reach alice through TCP"
+        );
     }
 
-    bob.send_chat_message(alice.node_id(), "via tcp").await.unwrap();
-    alice.send_chat_message(bob.node_id(), "retour").await.unwrap();
+    bob.send_chat_message(alice.node_id(), "via tcp")
+        .await
+        .unwrap();
+    alice
+        .send_chat_message(bob.node_id(), "retour")
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    assert!(alice.chat_messages.read().await.iter().any(|m| m.text == "via tcp"));
-    assert!(bob.chat_messages.read().await.iter().any(|m| m.text == "retour"));
+    assert!(alice
+        .chat_messages
+        .read()
+        .await
+        .iter()
+        .any(|m| m.text == "via tcp"));
+    assert!(bob
+        .chat_messages
+        .read()
+        .await
+        .iter()
+        .any(|m| m.text == "retour"));
     assert!(alice.diagnostics().await.tcp_packets_rx > 0);
 }
 
