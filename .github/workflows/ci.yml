@@ -50,5 +50,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
+      - name: Install Linux system dependencies (OS key vault)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev pkg-config
+
       - name: Check fuzz crate
         run: cargo check --manifest-path fuzz/Cargo.toml
