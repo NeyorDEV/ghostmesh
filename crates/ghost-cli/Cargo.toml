@@ -12,6 +12,7 @@ ghost-crypto = { path = "../ghost-crypto" }
 ghost-nat = { path = "../ghost-nat" }
 ghost-tun = { path = "../ghost-tun" }
 ghost-core = { path = "../ghost-core" }
+ghost-pki = { path = "../ghost-pki" }
 
 tokio = { workspace = true }
 clap = { workspace = true }
@@ -19,3 +20,4 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 hex = { workspace = true }
+serde_json = { workspace = true }

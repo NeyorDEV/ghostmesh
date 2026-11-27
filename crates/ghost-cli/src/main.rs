@@ -1,3 +1,5 @@
+mod service;
+
 use clap::{Parser, Subcommand};
 use ghost_core::MeshEngine;
 use ghost_crypto::IdentityKeypair;
@@ -24,6 +26,55 @@ const CHUNK_SIZE: usize = 128 * 1024;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum ServiceAction {
+    /// Start `ghostmesh up` automatically (systemd unit, launchd job or Windows logon task)
+    Install {
+        #[arg(short, long, default_value_t = 4242)]
+        port: u16,
+    },
+    /// Remove it
+    Uninstall,
+}
+
+#[derive(Subcommand, Debug)]
+enum DnsAction {
+    /// Answer `<name>.ghost` queries on this machine's virtual IP (port 53)
+    Run,
+    /// Make the operating system send `.ghost` lookups to that resolver (needs administrator rights)
+    Install,
+    /// Remove that system setting
+    Uninstall,
+}
+
+#[derive(Subcommand, Debug)]
+enum CaAction {
+    /// Print the path of the authority certificate to install on your devices
+    Path,
+    /// Print the authority certificate (PEM)
+    Show,
+}
+
+#[derive(Subcommand, Debug)]
+enum ListAction {
+    /// Add an entry (host:port)
+    Add { value: String },
+    /// Remove an entry
+    Remove { value: String },
+    /// List entries
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+enum RelayAction {
+    /// Add a relay: host:port#<relay public key in hex>
+    Add { relay: String },
+    /// Remove a relay by its host:port
+    Remove { addr: String },
+    /// List configured relays
+    List,
 }
 
 #[derive(Subcommand, Debug)]
@@ -66,6 +117,81 @@ enum Commands {
         /// Virtual mesh IP to assign (e.g. 10.42.0.1)
         #[arg(long)]
         ip: Option<Ipv4Addr>,
+    },
+
+    /// Show connectivity: NAT type, candidate addresses, relay, per-path peer counts
+    Status {
+        #[arg(short, long, default_value_t = 0)]
+        port: u16,
+    },
+
+    /// Manage rendezvous servers (they let known devices find each other after an address change)
+    Rendezvous {
+        #[command(subcommand)]
+        action: ListAction,
+    },
+
+    /// Manage STUN servers used to detect the public address and the NAT type
+    Stun {
+        #[command(subcommand)]
+        action: ListAction,
+    },
+
+    /// Choose what a paired device may reach on this PC (profiles: full, phone, web, rdp, blocked)
+    Access {
+        node_id: String,
+        profile: String,
+        /// TCP ports opened by the phone profile, e.g. 8765,5173 or 8000-8100
+        #[arg(long, value_delimiter = ',')]
+        ports: Vec<String>,
+    },
+
+    /// Run the node in the background at startup
+    Service {
+        #[command(subcommand)]
+        action: ServiceAction,
+    },
+
+    /// Expose a local web port over HTTPS at https://<name>.ghost (valid certificate, microphone allowed)
+    Serve {
+        /// Local port of the service, e.g. 5173
+        local_port: u16,
+        /// HTTPS port to listen on
+        #[arg(long, default_value_t = 443)]
+        port: u16,
+        /// Name to serve (defaults to the device name)
+        #[arg(long)]
+        name: Option<String>,
+        /// Address to listen on (defaults to this node's virtual IP)
+        #[arg(long)]
+        bind: Option<std::net::IpAddr>,
+    },
+
+    /// Local certificate authority used by `serve`
+    Ca {
+        #[command(subcommand)]
+        action: CaAction,
+    },
+
+    /// `.ghost` names: resolver and system integration
+    Dns {
+        #[command(subcommand)]
+        action: DnsAction,
+    },
+
+    /// Revoke a device: it is blocked here and on every other connected paired device
+    Revoke { node_id: String },
+
+    /// Give a paired device a lifetime in hours (use 0 to remove the limit)
+    Expire { node_id: String, hours: u64 },
+
+    /// List paired devices with their status
+    Devices,
+
+    /// Manage relay servers used when no direct route exists
+    Relay {
+        #[command(subcommand)]
+        action: RelayAction,
     },
 
     /// Send a file directly to a peer via GhostDrop P2P streaming
@@ -114,7 +240,9 @@ enum Commands {
 
 fn get_default_transfers_dir() -> PathBuf {
     if let Ok(profile) = std::env::var("USERPROFILE") {
-        let p = PathBuf::from(profile).join("Downloads").join("GhostMesh-Transfers");
+        let p = PathBuf::from(profile)
+            .join("Downloads")
+            .join("GhostMesh-Transfers");
         let _ = std::fs::create_dir_all(&p);
         p
     } else {
@@ -139,6 +267,65 @@ async fn try_setup_tun(engine: &Arc<MeshEngine>, virtual_ip: Option<Ipv4Addr>) {
     }
 }
 
+fn print_diagnostics(d: &ghost_core::DiagnosticsSnapshot) {
+    println!("Node ID         : {}", d.node_id);
+    println!("NAT type        : {}", d.nat_type);
+    println!("STUN answers    : {}", d.stun_answers);
+    println!("Public endpoint : {}", d.public_endpoint);
+    println!(
+        "Router mapping  : {} (UPnP: {}; NAT-PMP: {}; PCP: {})",
+        d.mapping_method.as_deref().unwrap_or("none"),
+        d.upnp,
+        d.natpmp,
+        d.pcp
+    );
+    println!("Candidates      : {}", d.candidates.join(", "));
+    println!("Relay           : {}", d.relay.as_deref().unwrap_or("none"));
+    println!(
+        "Peers           : {} direct, {} via relay",
+        d.direct_peers, d.relayed_peers
+    );
+    for h in &d.hints {
+        println!("! {h}");
+    }
+}
+
+fn run_all(commands: Vec<Vec<String>>) -> anyhow::Result<()> {
+    for c in commands {
+        println!("> {}", c.join(" "));
+        let status = std::process::Command::new(&c[0]).args(&c[1..]).status()?;
+        if !status.success() {
+            anyhow::bail!("command failed ({status}); run it from an administrator / root shell");
+        }
+    }
+    Ok(())
+}
+
+/// Name of this machine on the mesh: the configured one, else the computer name.
+fn device_name(cfg: &ghost_core::AppConfig) -> String {
+    cfg.device_name
+        .clone()
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .unwrap_or_else(|| "ghostmesh".to_string())
+}
+
+fn edit_list(list: &mut Vec<String>, action: ListAction) {
+    match action {
+        ListAction::Add { value } => {
+            if !list.contains(&value) {
+                list.push(value);
+            }
+        }
+        ListAction::Remove { value } => list.retain(|v| *v != value),
+        ListAction::List => {
+            for v in list.iter() {
+                println!("{v}");
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -151,13 +338,263 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Rendezvous { action } => {
+            let mut cfg = ghost_core::load_config();
+            edit_list(&mut cfg.rendezvous, action);
+            ghost_core::save_config(&cfg).map_err(|e| anyhow::anyhow!(e))?;
+        }
+
+        Commands::Stun { action } => {
+            let mut cfg = ghost_core::load_config();
+            edit_list(&mut cfg.stun_servers, action);
+            ghost_core::save_config(&cfg).map_err(|e| anyhow::anyhow!(e))?;
+        }
+
+        Commands::Service { action } => {
+            let exe = std::env::current_exe()?;
+            match action {
+                ServiceAction::Install { port } => match service::install_plan(&exe, port) {
+                    service::Install::File {
+                        path,
+                        content,
+                        then,
+                    } => {
+                        std::fs::write(&path, content)?;
+                        println!("Wrote {}", path.display());
+                        run_all(then)?;
+                    }
+                    service::Install::Commands(c) => run_all(c)?,
+                },
+                ServiceAction::Uninstall => run_all(service::uninstall_plan())?,
+            }
+        }
+
+        Commands::Status { port } => {
+            // A running node answers directly: no second engine, no second identity.
+            if let Ok(resp) =
+                ghost_core::control::send_request(&ghost_core::control::ControlRequest::Status)
+                    .await
+            {
+                if resp.ok {
+                    if let Ok(d) =
+                        serde_json::from_value::<ghost_core::DiagnosticsSnapshot>(resp.data)
+                    {
+                        print_diagnostics(&d);
+                        return Ok(());
+                    }
+                }
+            }
+            let engine = Arc::new(MeshEngine::bind_ephemeral(port).await?);
+            tokio::spawn(Arc::clone(&engine).run_receive_loop());
+            engine.start_background_tasks().await;
+            tokio::time::sleep(Duration::from_secs(4)).await;
+            let d = engine.diagnostics().await;
+            print_diagnostics(&d);
+        }
+
+        Commands::Access {
+            node_id,
+            profile,
+            ports,
+        } => {
+            let profile: ghost_core::Profile =
+                profile.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+            let ports = ports
+                .iter()
+                .map(|p| p.parse::<ghost_core::PortRange>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| anyhow::anyhow!(e))?;
+            if profile == ghost_core::Profile::Phone && ports.is_empty() {
+                anyhow::bail!("the phone profile needs at least one port: --ports 8765,5173");
+            }
+            let mut cfg = ghost_core::load_config();
+            let peer = cfg
+                .known_peers
+                .iter_mut()
+                .find(|k| k.node_id == node_id)
+                .ok_or_else(|| anyhow::anyhow!("unknown device: see `ghostmesh devices`"))?;
+            peer.access = ghost_core::AccessPolicy {
+                profile,
+                ports,
+                rules: Vec::new(),
+            };
+            ghost_core::save_config(&cfg).map_err(|e| anyhow::anyhow!(e))?;
+            println!("Access updated (a running GhostMesh applies it within 30 s).");
+        }
+
+        Commands::Ca { action } => {
+            let (ca, created) = ghost_pki::load_or_create_authority()?;
+            match action {
+                CaAction::Path => {
+                    println!("{}", ghost_pki::ca_cert_path().display());
+                    if created {
+                        println!("(just created)");
+                    }
+                }
+                CaAction::Show => print!("{}", ca.cert_pem()),
+            }
+        }
+
+        Commands::Serve {
+            local_port,
+            port,
+            name,
+            bind,
+        } => {
+            let mut cfg = ghost_core::load_config();
+            let (identity, _, _) = ghost_core::keystore::load_or_create_identity(&mut cfg)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let name = name.unwrap_or_else(|| device_name(&cfg));
+            let (ca, created) = ghost_pki::load_or_create_authority()?;
+            if created {
+                println!("Certificate authority created. Install this file on the devices that will open the page:");
+                println!("  {}", ghost_pki::ca_cert_path().display());
+            }
+            let host = ghost_pki::full_name(&name)?;
+            let bind = bind.unwrap_or(std::net::IpAddr::V4(identity.node_id().to_virtual_ip()));
+            let listener = TcpListener::bind((bind, port))
+                .await
+                .map_err(|e| anyhow::anyhow!("cannot listen on {bind}:{port}: {e} (is the mesh up, and do you have the rights for this port?)"))?;
+            let tls = ca.server_config(&name)?;
+            println!(
+                "Serving https://{host}{} -> 127.0.0.1:{local_port} (listening on {bind}:{port})",
+                if port == 443 {
+                    String::new()
+                } else {
+                    format!(":{port}")
+                }
+            );
+            ghost_pki::serve_https(
+                listener,
+                SocketAddr::from(([127, 0, 0, 1], local_port)),
+                tls,
+            )
+            .await?;
+        }
+
+        Commands::Dns { action } => {
+            let mut cfg = ghost_core::load_config();
+            let (identity, _, _) = ghost_core::keystore::load_or_create_identity(&mut cfg)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            let dns_ip = identity.node_id().to_virtual_ip();
+            match action {
+                DnsAction::Run => {
+                    let names: ghost_core::dns::NameTable = Default::default();
+                    let socket = tokio::net::UdpSocket::bind((dns_ip, 53))
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("cannot listen on {dns_ip}:53: {e} (is the mesh up?)")
+                        })?;
+                    let table = Arc::clone(&names);
+                    let me = identity.node_id();
+                    tokio::spawn(async move {
+                        loop {
+                            let cfg = ghost_core::load_config();
+                            *table.write().await =
+                                ghost_core::dns::build_names(&cfg, me, &device_name(&cfg));
+                            tokio::time::sleep(Duration::from_secs(15)).await;
+                        }
+                    });
+                    println!("Resolving .ghost names on {dns_ip}:53");
+                    ghost_core::dns::serve(socket, names).await;
+                }
+                DnsAction::Install | DnsAction::Uninstall => {
+                    let commands = if matches!(action, DnsAction::Install) {
+                        ghost_core::dns::os_install_commands(dns_ip, "ghost0")
+                    } else {
+                        ghost_core::dns::os_uninstall_commands("ghost0")
+                    };
+                    for c in commands {
+                        println!("> {}", c.join(" "));
+                        let status = std::process::Command::new(&c[0]).args(&c[1..]).status()?;
+                        if !status.success() {
+                            anyhow::bail!("command failed ({status}); run it from an administrator / root shell");
+                        }
+                    }
+                }
+            }
+        }
+
+        Commands::Devices => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            for k in ghost_core::load_config().known_peers {
+                let status = if k.revoked {
+                    "REVOKED".to_string()
+                } else {
+                    match k.expires_at {
+                        Some(t) if t <= now => "EXPIRED".to_string(),
+                        Some(t) => format!("expires in {} h", (t - now) / 3600),
+                        None => "active".to_string(),
+                    }
+                };
+                let ports: Vec<String> = k.access.ports.iter().map(|p| p.to_string()).collect();
+                println!(
+                    "{}  {}  {}  access={:?} {}",
+                    k.node_id,
+                    k.alias,
+                    status,
+                    k.access.profile,
+                    ports.join(",")
+                );
+            }
+        }
+
+        Commands::Revoke { node_id } => {
+            let node: NodeId = node_id.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+            let engine = Arc::new(MeshEngine::bind(0).await?);
+            engine.revoke_peer(node).await;
+            println!("Device {node} revoked. A running GhostMesh applies it within 30 s and tells the other connected devices.");
+        }
+
+        Commands::Expire { node_id, hours } => {
+            let node: NodeId = node_id.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+            let engine = Arc::new(MeshEngine::bind(0).await?);
+            let hours = if hours == 0 { None } else { Some(hours) };
+            if engine.set_device_expiry(node, hours).await {
+                println!("Expiry updated.");
+            } else {
+                println!("Unknown device.");
+            }
+        }
+
+        Commands::Relay { action } => {
+            let mut cfg = ghost_core::load_config();
+            match action {
+                RelayAction::Add { relay } => {
+                    let ep: ghost_core::RelayEndpoint =
+                        relay.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+                    cfg.relays.retain(|r| r.addr != ep.addr);
+                    cfg.relays.push(ep);
+                    ghost_core::save_config(&cfg).map_err(|e| anyhow::anyhow!(e))?;
+                    println!("Relay added.");
+                }
+                RelayAction::Remove { addr } => {
+                    cfg.relays.retain(|r| r.addr != addr);
+                    ghost_core::save_config(&cfg).map_err(|e| anyhow::anyhow!(e))?;
+                    println!("Relay removed.");
+                }
+                RelayAction::List => {
+                    for r in &cfg.relays {
+                        println!("{}#{}", r.addr, r.public_key);
+                    }
+                }
+            }
+        }
+
         Commands::Keygen => {
             let keypair = IdentityKeypair::generate()?;
             println!("[GHOSTMESH] Cryptographic Identity Generated");
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Node ID    : {}", keypair.node_id());
             println!("Public Key : {}", keypair.public_hex());
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Keep your private keys secure!");
         }
 
@@ -167,7 +604,8 @@ async fn main() -> anyhow::Result<()> {
             info!("Bound local socket on {local_addr}");
             info!("Querying STUN server {stun}...");
 
-            match ghost_nat::discover_public_endpoint(&socket, &stun, Duration::from_secs(3)).await {
+            match ghost_nat::discover_public_endpoint(&socket, &stun, Duration::from_secs(3)).await
+            {
                 Ok(public_endpoint) => {
                     println!("\n[OK] NAT Traversal Discovery Success");
                     println!("----------------------------------------------------------------------------");
@@ -189,7 +627,9 @@ async fn main() -> anyhow::Result<()> {
             let ticket_str = ticket.to_ticket_string();
 
             println!("\n[GHOSTMESH] Invitation Ready");
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Node ID        : {}", engine.node_id());
             println!("Public Endpoint: {}", engine.public_addr);
             if let Some(vip) = ip {
@@ -197,7 +637,9 @@ async fn main() -> anyhow::Result<()> {
             }
             println!("\nShare this ticket with your peer:");
             println!("\x1b[1;36m{}\x1b[0m", ticket_str);
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Run the following command on the other machine to connect:");
             println!("  ghostmesh join {}", ticket_str);
             println!("\nListening for incoming direct P2P connection... (Ctrl+C to quit)\n");
@@ -213,19 +655,26 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Join { ticket, port, ip } => {
-            let parsed_ticket: InviteTicket = ticket.parse()
+            let parsed_ticket: InviteTicket = ticket
+                .parse()
                 .map_err(|e| anyhow::anyhow!("Invalid invite ticket: {e}"))?;
 
             println!("\nConnecting to GhostMesh Peer...");
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Target Node ID : {}", parsed_ticket.node_id);
             println!("Target Endpoint: {}", parsed_ticket.endpoint);
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
 
             let engine = Arc::new(MeshEngine::bind(port).await?);
             try_setup_tun(&engine, ip).await;
 
-            engine.map_peer_virtual_ip(parsed_ticket.node_id, Ipv4Addr::new(10, 42, 0, 1)).await;
+            engine
+                .map_peer_virtual_ip(parsed_ticket.node_id, Ipv4Addr::new(10, 42, 0, 1))
+                .await;
 
             let engine_recv = Arc::clone(&engine);
             tokio::spawn(async move {
@@ -235,7 +684,9 @@ async fn main() -> anyhow::Result<()> {
             engine.start_background_tasks().await;
             engine.join_ticket(parsed_ticket).await?;
 
-            println!("[OK] UDP hole-punching probes dispatched. Direct tunnel negotiation active.\n");
+            println!(
+                "[OK] UDP hole-punching probes dispatched. Direct tunnel negotiation active.\n"
+            );
 
             tokio::signal::ctrl_c().await?;
             info!("Exiting GhostMesh.");
@@ -247,14 +698,18 @@ async fn main() -> anyhow::Result<()> {
             try_setup_tun(&engine, ip).await;
 
             println!("\n[GHOSTMESH] Node Running");
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Node ID        : {}", engine.node_id());
             println!("Public Endpoint: {}", engine.public_addr);
             println!("Local Port     : {port}");
             if let Some(vip) = ip {
                 println!("Mesh Virtual IP: {} (10.42.0.0/16)", vip);
             }
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Press Ctrl+C to terminate.\n");
 
             let engine_clone = Arc::clone(&engine);
@@ -263,7 +718,20 @@ async fn main() -> anyhow::Result<()> {
             });
 
             engine.start_background_tasks().await;
-            tokio::signal::ctrl_c().await?;
+
+            // The CLI and the GUI talk to the running node through this local channel.
+            let shutdown = Arc::new(tokio::sync::Notify::new());
+            let control = Arc::clone(&engine);
+            let stop = Arc::clone(&shutdown);
+            tokio::spawn(async move {
+                if let Err(e) = ghost_core::control::serve_control(control, stop).await {
+                    warn!("Control channel unavailable: {e}");
+                }
+            });
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = shutdown.notified() => {}
+            }
             info!("Shutting down GhostMesh node.");
         }
 
@@ -288,12 +756,19 @@ async fn main() -> anyhow::Result<()> {
             };
 
             println!("\n[GHOSTDROP] Preparing high-speed P2P transfer");
-            println!("----------------------------------------------------------------------------");
-            println!("File     : {} ({:.2} MB)", filename, total_size as f64 / 1_000_000.0);
+            println!(
+                "----------------------------------------------------------------------------"
+            );
+            println!(
+                "File     : {} ({:.2} MB)",
+                filename,
+                total_size as f64 / 1_000_000.0
+            );
             println!("Target   : {}", target_addr);
             println!("Connecting...");
 
-            let mut socket = TcpStream::connect(&target_addr).await
+            let mut socket = TcpStream::connect(&target_addr)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to connect to {target_addr}: {e}"))?;
 
             socket.write_all(GHOSTDROP_MAGIC).await?;
@@ -330,7 +805,10 @@ async fn main() -> anyhow::Result<()> {
                     let empty = bar_len.saturating_sub(filled);
                     let bar = format!("[{}{}]", "=".repeat(filled), " ".repeat(empty));
 
-                    print!("\rSending: {} {:.1}% ({:.1}/{:.1} MB) - {:.1} MB/s  ", bar, pct, cur_mb, tot_mb, mbps);
+                    print!(
+                        "\rSending: {} {:.1}% ({:.1}/{:.1} MB) - {:.1} MB/s  ",
+                        bar, pct, cur_mb, tot_mb, mbps
+                    );
                     let _ = std::io::stdout().flush();
 
                     last_log = Instant::now();
@@ -342,8 +820,13 @@ async fn main() -> anyhow::Result<()> {
             let elapsed = start.elapsed().as_secs_f64().max(0.001);
             let avg_speed = (transferred as f64 / 1_000_000.0) / elapsed;
 
-            println!("\n----------------------------------------------------------------------------");
-            println!("[OK] File '{}' sent successfully in {:.1}s (avg {:.1} MB/s)\n", filename, elapsed, avg_speed);
+            println!(
+                "\n----------------------------------------------------------------------------"
+            );
+            println!(
+                "[OK] File '{}' sent successfully in {:.1}s (avg {:.1} MB/s)\n",
+                filename, elapsed, avg_speed
+            );
         }
 
         Commands::Receive { port, dir } => {
@@ -357,11 +840,14 @@ async fn main() -> anyhow::Result<()> {
             };
 
             let bind_addr = format!("0.0.0.0:{port}");
-            let listener = TcpListener::bind(&bind_addr).await
+            let listener = TcpListener::bind(&bind_addr)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to bind on {bind_addr}: {e}"))?;
 
             println!("\n[GHOSTDROP] Receiver daemon active");
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Listening on : {}", bind_addr);
             println!("Saving to    : {:?}", out_dir);
             println!("Waiting for incoming P2P transfers... (Ctrl+C to quit)\n");
@@ -411,7 +897,12 @@ async fn main() -> anyhow::Result<()> {
                         .to_string();
 
                     let dest = out_dir_clone.join(&safe_fn);
-                    println!("Receiving '{}' ({:.2} MB) from {}...", safe_fn, total_size as f64 / 1_000_000.0, peer_addr);
+                    println!(
+                        "Receiving '{}' ({:.2} MB) from {}...",
+                        safe_fn,
+                        total_size as f64 / 1_000_000.0,
+                        peer_addr
+                    );
 
                     let mut out_file = match tokio::fs::File::create(&dest).await {
                         Ok(f) => f,
@@ -426,7 +917,8 @@ async fn main() -> anyhow::Result<()> {
                     let start = Instant::now();
 
                     while transferred < total_size {
-                        let to_read = std::cmp::min(buffer.len() as u64, total_size - transferred) as usize;
+                        let to_read =
+                            std::cmp::min(buffer.len() as u64, total_size - transferred) as usize;
                         let n = match socket.read(&mut buffer[..to_read]).await {
                             Ok(0) => break,
                             Ok(n) => n,
@@ -445,17 +937,29 @@ async fn main() -> anyhow::Result<()> {
                     let _ = out_file.flush().await;
                     let elapsed = start.elapsed().as_secs_f64().max(0.001);
                     let avg = (transferred as f64 / 1_000_000.0) / elapsed;
-                    println!("[OK] Finished receiving '{}' in {:.1}s (avg {:.1} MB/s). Saved to {:?}", safe_fn, elapsed, avg, dest);
+                    println!(
+                        "[OK] Finished receiving '{}' in {:.1}s (avg {:.1} MB/s). Saved to {:?}",
+                        safe_fn, elapsed, avg, dest
+                    );
                 });
             }
         }
 
-        Commands::Sync { dir, target, port: _ } => {
+        Commands::Sync {
+            dir,
+            target,
+            port: _,
+        } => {
             let sync_engine = ghost_core::GhostSyncEngine::new();
-            sync_engine.set_watched_directory(&dir).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+            sync_engine
+                .set_watched_directory(&dir)
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
 
             println!("\n[GHOSTSYNC] Real-time folder synchronization active");
-            println!("----------------------------------------------------------------------------");
+            println!(
+                "----------------------------------------------------------------------------"
+            );
             println!("Watching folder : {}", dir);
             if let Some(ref t) = target {
                 println!("Target peer     : {}", t);
