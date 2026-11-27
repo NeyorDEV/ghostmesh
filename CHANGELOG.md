@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 ### Relay (new crate `ghost-relay`)
 - Relay server: a node registers by proving it owns its private key (challenge answered with an

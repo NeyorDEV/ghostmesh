@@ -12,7 +12,7 @@ GhostMesh connects your devices directly over UDP without relying on centralized
 
 ## Downloads
 
-Téléchargez les exécutables autonomes directement depuis la **[Dernière Release (v0.2.6)](https://github.com/NeyorDEV/ghostmesh/releases/latest)** :
+Téléchargez les exécutables autonomes directement depuis la **[Dernière Release (v0.3.0)](https://github.com/NeyorDEV/ghostmesh/releases/latest)** :
 
 - **`ghostmesh-gui.exe` (Application Bureau avec Interface Graphique) :**
   - Application complète avec interface visuelle (tableau de bord, QR code, gestion des pairs, RDP en 1 clic, chat et transferts de fichiers).

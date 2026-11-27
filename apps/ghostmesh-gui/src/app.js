@@ -797,7 +797,7 @@ async function checkForUpdates() {
     if (res.ok) {
       const data = await res.json();
       const latestTag = data.tag_name || '';
-      const currentVer = 'v0.2.6';
+      const currentVer = 'v0.3.0';
       if (latestTag && latestTag !== currentVer && latestTag > currentVer) {
         updateTag.textContent = latestTag;
         updateAlert.style.display = 'flex';

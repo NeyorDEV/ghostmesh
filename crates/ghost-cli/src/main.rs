@@ -21,7 +21,7 @@ const CHUNK_SIZE: usize = 128 * 1024;
 #[derive(Parser, Debug)]
 #[command(name = "ghostmesh")]
 #[command(author = "NeyorDEV")]
-#[command(version = "0.1.3")]
+#[command(version = "0.3.0")]
 #[command(about = "Decentralized P2P Encrypted Mesh Overlay & Direct File Transfer", long_about = None)]
 struct Cli {
     #[command(subcommand)]
