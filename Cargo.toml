@@ -6,6 +6,8 @@ members = [
     "crates/ghost-nat",
     "crates/ghost-tun",
     "crates/ghost-core",
+    "crates/ghost-relay",
+    "crates/ghost-pki",
     "crates/ghost-cli",
     "apps/ghostmesh-gui/src-tauri",
 ]

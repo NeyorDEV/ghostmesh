@@ -1,0 +1,18 @@
+[package]
+name = "ghost-relay"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "GhostMesh relay and rendezvous server (sees only sealed packets, public keys and addresses)"
+
+[dependencies]
+ghost-protocol = { path = "../ghost-protocol" }
+ghost-crypto = { path = "../ghost-crypto" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
