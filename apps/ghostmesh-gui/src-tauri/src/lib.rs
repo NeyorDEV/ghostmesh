@@ -577,6 +577,9 @@ fn launch_rdp(virtual_ip: String, node_id: Option<String>) -> Result<(), String>
         }
     }
 
+    // Only Windows has a built-in RDP client to launch
+    #[cfg(not(target_os = "windows"))]
+    let _ = &virtual_ip;
     #[cfg(target_os = "windows")]
     {
         let ip = if let Some((clean_ip, _)) = virtual_ip.split_once('/') {
