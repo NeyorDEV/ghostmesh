@@ -7,9 +7,13 @@ license.workspace = true
 description = "Cross-platform virtual network adapter (TUN/Wintun) and IP routing for GhostMesh"
 
 [dependencies]
+serde = { workspace = true }
 ghost-protocol = { path = "../ghost-protocol" }
 tun-rs = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 bytes = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

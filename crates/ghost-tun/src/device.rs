@@ -7,7 +7,16 @@ use tokio::sync::RwLock;
 use tracing::info;
 use tun_rs::{AsyncDevice, DeviceBuilder};
 
-pub const DEFAULT_MTU: u16 = 1420;
+/// Inner MTU. The tunnel adds IPv6 (40) + UDP (8) + GhostMesh header (43) + AEAD tag (16) = 107
+/// bytes around each packet, so 1380 keeps the outer packet under 1500 and under PPPoE at 1492.
+pub const DEFAULT_MTU: u16 = 1380;
+/// Bytes added around every tunnelled packet, in the worst case (IPv6 transport).
+pub const TUNNEL_OVERHEAD: u32 = 107;
+
+/// Largest inner MTU that fits a link of `link_mtu`, never below the IPv6 minimum of 1280.
+pub fn mtu_for_link(link_mtu: u32) -> u16 {
+    link_mtu.saturating_sub(TUNNEL_OVERHEAD).clamp(1280, 1420) as u16
+}
 pub const DEFAULT_VIRTUAL_NETWORK: &str = "10.42.0.0/16";
 
 #[derive(Error, Debug)]
@@ -33,12 +42,16 @@ pub struct Ipv4Header {
 impl Ipv4Header {
     pub fn parse(packet: &[u8]) -> Result<Self, TunError> {
         if packet.len() < 20 {
-            return Err(TunError::InvalidPacket("Packet too short for IPv4 header".into()));
+            return Err(TunError::InvalidPacket(
+                "Packet too short for IPv4 header".into(),
+            ));
         }
 
         let version = (packet[0] >> 4) & 0x0F;
         if version != 4 {
-            return Err(TunError::InvalidPacket(format!("Expected IPv4, got version {version}")));
+            return Err(TunError::InvalidPacket(format!(
+                "Expected IPv4, got version {version}"
+            )));
         }
 
         let total_len = u16::from_be_bytes([packet[2], packet[3]]);
@@ -60,6 +73,7 @@ impl Ipv4Header {
 pub struct RouteTable {
     ip_to_node: HashMap<Ipv4Addr, NodeId>,
     node_to_ip: HashMap<NodeId, Ipv4Addr>,
+    ip6_to_node: HashMap<std::net::Ipv6Addr, NodeId>,
 }
 
 impl RouteTable {
@@ -70,6 +84,14 @@ impl RouteTable {
     pub fn insert(&mut self, ip: Ipv4Addr, node_id: NodeId) {
         self.ip_to_node.insert(ip, node_id);
         self.node_to_ip.insert(node_id, ip);
+    }
+
+    pub fn insert_v6(&mut self, ip: std::net::Ipv6Addr, node_id: NodeId) {
+        self.ip6_to_node.insert(ip, node_id);
+    }
+
+    pub fn get_node_by_ip6(&self, ip: &std::net::Ipv6Addr) -> Option<NodeId> {
+        self.ip6_to_node.get(ip).copied()
     }
 
     pub fn get_node_by_ip(&self, ip: &Ipv4Addr) -> Option<NodeId> {
@@ -89,10 +111,24 @@ pub struct VirtualAdapter {
 
 impl VirtualAdapter {
     pub fn create(name: &str, assigned_ip: Ipv4Addr, netmask: Ipv4Addr) -> Result<Self, TunError> {
-        let builder = DeviceBuilder::new()
+        Self::create_dual(name, assigned_ip, netmask, None, DEFAULT_MTU)
+    }
+
+    /// Creates the interface with an IPv4 address, optionally an IPv6 one (/32), and a given MTU.
+    pub fn create_dual(
+        name: &str,
+        assigned_ip: Ipv4Addr,
+        netmask: Ipv4Addr,
+        ipv6: Option<std::net::Ipv6Addr>,
+        mtu: u16,
+    ) -> Result<Self, TunError> {
+        let mut builder = DeviceBuilder::new()
             .name(name)
             .ipv4(assigned_ip, netmask, None)
-            .mtu(DEFAULT_MTU);
+            .mtu(mtu);
+        if let Some(v6) = ipv6 {
+            builder = builder.ipv6(v6, 32u8);
+        }
 
         let device = match builder.build_async() {
             Ok(dev) => dev,
