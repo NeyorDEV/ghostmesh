@@ -1,0 +1,52 @@
+[package]
+name = "ghostmesh-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ghost-protocol = { path = "../crates/ghost-protocol" }
+ghost-core = { path = "../crates/ghost-core" }
+ghost-tun = { path = "../crates/ghost-tun" }
+
+[workspace]
+
+[[bin]]
+name = "packet_decode"
+path = "fuzz_targets/packet_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "invite_ticket"
+path = "fuzz_targets/invite_ticket.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "relay_frame"
+path = "fuzz_targets/relay_frame.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "rendezvous_frame"
+path = "fuzz_targets/rendezvous_frame.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "dns_answer"
+path = "fuzz_targets/dns_answer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ip_filter"
+path = "fuzz_targets/ip_filter.rs"
+test = false
+doc = false

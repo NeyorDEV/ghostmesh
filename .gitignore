@@ -11,3 +11,8 @@ packages/ghostmesh-cli/bin/*.exe
 packages/ghostmesh-cli/bin/ghost-cli
 *.tgz
 
+
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+/fuzz/Cargo.lock
