@@ -28,7 +28,9 @@ pub struct TransferStatus {
 
 pub fn get_transfers_dir() -> PathBuf {
     if let Ok(profile) = std::env::var("USERPROFILE") {
-        let p = PathBuf::from(profile).join("Downloads").join("GhostMesh-Transfers");
+        let p = PathBuf::from(profile)
+            .join("Downloads")
+            .join("GhostMesh-Transfers");
         let _ = std::fs::create_dir_all(&p);
         p
     } else {
@@ -41,7 +43,12 @@ pub fn get_transfers_dir() -> PathBuf {
 pub async fn start_ghostdrop_server(status_state: Arc<RwLock<Option<TransferStatus>>>) {
     let mut bound_listener = None;
 
-    for port in [GHOSTDROP_PORT, GHOSTDROP_PORT + 2, GHOSTDROP_PORT + 4, GHOSTDROP_PORT + 6] {
+    for port in [
+        GHOSTDROP_PORT,
+        GHOSTDROP_PORT + 2,
+        GHOSTDROP_PORT + 4,
+        GHOSTDROP_PORT + 6,
+    ] {
         let addr = format!("0.0.0.0:{port}");
         match TcpListener::bind(&addr).await {
             Ok(l) => {
@@ -297,15 +304,27 @@ pub async fn send_file(
         .map_err(|e| format!("Failed to connect to {target_addr}: {e}"))?;
 
     // Send magic
-    socket.write_all(GHOSTDROP_MAGIC).await.map_err(|e| e.to_string())?;
+    socket
+        .write_all(GHOSTDROP_MAGIC)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Send size
-    socket.write_u64(total_size).await.map_err(|e| e.to_string())?;
+    socket
+        .write_u64(total_size)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Send filename
     let fn_bytes = filename.as_bytes();
-    socket.write_u16(fn_bytes.len() as u16).await.map_err(|e| e.to_string())?;
-    socket.write_all(fn_bytes).await.map_err(|e| e.to_string())?;
+    socket
+        .write_u16(fn_bytes.len() as u16)
+        .await
+        .map_err(|e| e.to_string())?;
+    socket
+        .write_all(fn_bytes)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Read resume offset from receiver
     let resume_offset = socket.read_u64().await.map_err(|e| e.to_string())?;
@@ -333,7 +352,10 @@ pub async fn send_file(
             break;
         }
 
-        socket.write_all(&buffer[..n]).await.map_err(|e| e.to_string())?;
+        socket
+            .write_all(&buffer[..n])
+            .await
+            .map_err(|e| e.to_string())?;
         transferred += n as u64;
         bytes_since_last += n as u64;
 

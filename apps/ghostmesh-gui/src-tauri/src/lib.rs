@@ -45,7 +45,10 @@ async fn get_node_status(state: State<'_, GuiState>) -> Result<NodeStatus, Strin
 
     let peers_count = {
         let table = engine.peers.read().await;
-        table.iter().filter(|p| p.state == ghost_core::PeerState::Connected).count()
+        table
+            .iter()
+            .filter(|p| p.state == ghost_core::PeerState::Connected)
+            .count()
     };
 
     let vip = state.virtual_ip.read().await;
@@ -60,7 +63,9 @@ async fn get_node_status(state: State<'_, GuiState>) -> Result<NodeStatus, Strin
 }
 
 #[tauri::command]
-async fn get_diagnostics(state: State<'_, GuiState>) -> Result<ghost_core::DiagnosticsSnapshot, String> {
+async fn get_diagnostics(
+    state: State<'_, GuiState>,
+) -> Result<ghost_core::DiagnosticsSnapshot, String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
     Ok(engine.diagnostics().await)
@@ -84,7 +89,10 @@ async fn join_peer(ticket: String, state: State<'_, GuiState>) -> Result<String,
         return Err("Cannot join your own invite ticket. Paste this ticket into another GhostMesh instance on another device.".into());
     }
 
-    engine.join_ticket(parsed).await.map_err(|e| e.to_string())?;
+    engine
+        .join_ticket(parsed)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok("Hole-punching probes dispatched".into())
 }
 
@@ -92,7 +100,7 @@ async fn join_peer(ticket: String, state: State<'_, GuiState>) -> Result<String,
 async fn disconnect_peer(node_id: String, state: State<'_, GuiState>) -> Result<(), String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
-    let target: ghost_protocol::NodeId = node_id.parse().map_err(|e| format!("{e}"))?;
+    let target: ghost_protocol::NodeId = node_id.parse().map_err(|e: String| e)?;
     engine.remove_peer(target).await;
     Ok(())
 }
@@ -143,8 +151,8 @@ async fn ghostdrop_get_status(
 
 #[tauri::command]
 fn generate_ticket_qr(ticket: String) -> Result<String, String> {
-    use qrcode::QrCode;
     use qrcode::render::svg;
+    use qrcode::QrCode;
 
     let code = QrCode::new(ticket.as_bytes()).map_err(|e| e.to_string())?;
     let svg = code
@@ -164,7 +172,9 @@ async fn ghostsync_set_dir(dir: String, state: State<'_, GuiState>) -> Result<()
 }
 
 #[tauri::command]
-async fn ghostsync_get_status(state: State<'_, GuiState>) -> Result<ghost_core::SyncStatus, String> {
+async fn ghostsync_get_status(
+    state: State<'_, GuiState>,
+) -> Result<ghost_core::SyncStatus, String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
     Ok(engine.sync.get_status().await)
@@ -199,6 +209,62 @@ fn update_device_permissions(
     ghost_core::save_config(&cfg)
 }
 
+/// Sets what a paired device may reach on this PC: profile (full, phone, web, rdp, blocked) and,
+/// for `phone`, the comma separated list of TCP ports it may use.
+#[tauri::command]
+async fn set_device_access(
+    state: State<'_, GuiState>,
+    node_id: String,
+    profile: String,
+    ports: String,
+) -> Result<(), String> {
+    let profile: ghost_core::Profile = profile.parse()?;
+    let ports = ports
+        .split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| p.parse::<ghost_core::PortRange>())
+        .collect::<Result<Vec<_>, _>>()?;
+    let policy = ghost_core::AccessPolicy {
+        profile,
+        ports,
+        rules: Vec::new(),
+    };
+
+    let mut cfg = ghost_core::load_config();
+    let peer = cfg
+        .known_peers
+        .iter_mut()
+        .find(|p| p.node_id == node_id)
+        .ok_or("Unknown device")?;
+    peer.access = policy.clone();
+    ghost_core::save_config(&cfg)?;
+
+    if let Some(engine) = state.engine.read().await.as_ref() {
+        let node: ghost_protocol::NodeId = node_id.parse().map_err(|e: String| e)?;
+        engine.access.set_policy(node, policy);
+    }
+    Ok(())
+}
+
+/// Revokes a device: refused from now on, and the other connected devices are told.
+#[tauri::command]
+async fn revoke_device(state: State<'_, GuiState>, node_id: String) -> Result<(), String> {
+    let node: ghost_protocol::NodeId = node_id.parse().map_err(|e: String| e)?;
+    if let Some(engine) = state.engine.read().await.as_ref() {
+        engine.revoke_peer(node).await;
+        return Ok(());
+    }
+    let mut cfg = ghost_core::load_config();
+    let peer = cfg
+        .known_peers
+        .iter_mut()
+        .find(|p| p.node_id == node_id)
+        .ok_or("Unknown device")?;
+    peer.revoked = true;
+    ghost_core::save_config(&cfg)
+}
+
 #[tauri::command]
 async fn send_chat_message(
     target_node_id: String,
@@ -207,7 +273,7 @@ async fn send_chat_message(
 ) -> Result<(), String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
-    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e| format!("{e}"))?;
+    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e: String| e)?;
     engine
         .send_chat_message(dest_node, &text)
         .await
@@ -235,7 +301,12 @@ fn get_autostart() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
         let output = std::process::Command::new("reg")
-            .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "GhostMesh"])
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v",
+                "GhostMesh",
+            ])
             .output();
         if let Ok(out) = output {
             return Ok(out.status.success());
@@ -251,7 +322,10 @@ fn set_autostart(enable: bool) -> Result<(), String> {
     {
         if enable {
             if let Ok(exe_path) = std::env::current_exe() {
-                let val = format!("\"{}\" --silent", exe_path.to_str().unwrap_or("GhostMesh.exe"));
+                let val = format!(
+                    "\"{}\" --silent",
+                    exe_path.to_str().unwrap_or("GhostMesh.exe")
+                );
                 let _ = std::process::Command::new("reg")
                     .args([
                         "add",
@@ -299,8 +373,11 @@ async fn send_clipboard_to_peer(
 ) -> Result<(), String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
-    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e| format!("{e}"))?;
-    engine.send_clipboard(dest_node, &text).await.map_err(|e| e.to_string())
+    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e: String| e)?;
+    engine
+        .send_clipboard(dest_node, &text)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -351,7 +428,15 @@ async fn set_exit_node(
                     .args(["add", "0.0.0.0", "mask", "128.0.0.0", &vip, "metric", "10"])
                     .output();
                 let _ = std::process::Command::new("route")
-                    .args(["add", "128.0.0.0", "mask", "128.0.0.0", &vip, "metric", "10"])
+                    .args([
+                        "add",
+                        "128.0.0.0",
+                        "mask",
+                        "128.0.0.0",
+                        &vip,
+                        "metric",
+                        "10",
+                    ])
                     .output();
                 let _ = engine
                     .send_packet(nid, ghost_protocol::PacketType::ExitNodeRoute, b"ROUTE_REQ")
@@ -366,9 +451,7 @@ async fn set_exit_node(
 }
 
 #[tauri::command]
-async fn get_exit_node_status(
-    state: State<'_, GuiState>,
-) -> Result<ExitNodeStatus, String> {
+async fn get_exit_node_status(state: State<'_, GuiState>) -> Result<ExitNodeStatus, String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
     let exit_guard = engine.active_exit_node.read().await;
@@ -415,12 +498,18 @@ async fn request_device_connect(
 ) -> Result<(), String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
-    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e| format!("{e}"))?;
-    let dest_addr: std::net::SocketAddr = target_endpoint.parse().map_err(|e| format!("{e}"))?;
+    let dest_node: ghost_protocol::NodeId = target_node_id.parse().map_err(|e: String| e)?;
+    let dest_addr: std::net::SocketAddr = target_endpoint
+        .parse()
+        .map_err(|e: std::net::AddrParseError| e.to_string())?;
 
     engine.add_peer(dest_node, dest_addr).await;
     engine
-        .send_packet(dest_node, ghost_protocol::PacketType::PairRequest, b"CONNECT_REQUEST")
+        .send_packet(
+            dest_node,
+            ghost_protocol::PacketType::PairRequest,
+            b"CONNECT_REQUEST",
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -443,7 +532,7 @@ async fn respond_connection_request(
 ) -> Result<(), String> {
     let guard = state.engine.read().await;
     let engine = guard.as_ref().ok_or("Engine not started")?;
-    let dest_node: ghost_protocol::NodeId = node_id.parse().map_err(|e| format!("{e}"))?;
+    let dest_node: ghost_protocol::NodeId = node_id.parse().map_err(|e: String| e)?;
 
     if accept {
         let req = engine.pending_request.read().await;
@@ -573,7 +662,8 @@ pub fn run() {
                         // Start periodic GhostSync change detector
                         let sync_engine = Arc::clone(&arc_engine.sync);
                         tokio::spawn(async move {
-                            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+                            let mut interval =
+                                tokio::time::interval(std::time::Duration::from_secs(3));
                             loop {
                                 interval.tick().await;
                                 let _ = sync_engine.scan_and_detect_changes().await;
@@ -612,6 +702,8 @@ pub fn run() {
             get_known_devices,
             remove_known_device,
             update_device_permissions,
+            set_device_access,
+            revoke_device,
             request_device_connect,
             get_pending_connection_request,
             respond_connection_request,

@@ -6,11 +6,14 @@ use std::io::Write;
 fn main() {
     std::panic::set_hook(Box::new(|info| {
         eprintln!("CRITICAL PANIC: {info}");
-        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("ghostmesh-crash.log") {
+        if let Ok(mut f) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("ghostmesh-crash.log")
+        {
             let _ = writeln!(f, "Panic: {info}");
         }
     }));
 
     ghostmesh_gui_lib::run();
 }
-

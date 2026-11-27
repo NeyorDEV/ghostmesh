@@ -484,6 +484,15 @@ async function updateKnownDevices() {
           </div>
         </td>
         <td>
+          <div class="perm-group" title="What this device may reach on this PC">
+            <select onchange="setDeviceAccess('${d.node_id}', this.value, document.getElementById('ports-${d.node_id}').value)">
+              ${['full', 'phone', 'web', 'rdp', 'blocked'].map(p => `<option value="${p}" ${((d.access && d.access.profile) || 'full') === p ? 'selected' : ''}>${p}</option>`).join('')}
+            </select>
+            <input id="ports-${d.node_id}" class="font-mono" style="width: 110px;" placeholder="ports 8765,5173" value="${((d.access && d.access.ports) || []).join(',')}" onchange="setDeviceAccess('${d.node_id}', this.parentElement.querySelector('select').value, this.value)">
+          </div>
+        </td>
+        <td>
+          ${d.revoked ? '<strong>REVOKED</strong>' : `<button class="btn-forget-sm" onclick="revokeDevice('${d.node_id}')">Revoke</button>`}
           <button class="btn-connect-sm" onclick="connectKnown('${d.node_id}', '${d.endpoint}')">Connect</button>
           <button class="btn-forget-sm" onclick="forgetDevice('${d.node_id}')">Forget</button>
         </td>
@@ -516,6 +525,24 @@ window.toggleDevicePerm = async function(nodeId, permType, value) {
     });
   } catch (e) {
     console.error('Permission update error:', e);
+  }
+};
+
+window.setDeviceAccess = async function(nodeId, profile, ports) {
+  try {
+    await invoke('set_device_access', { nodeId, profile, ports });
+  } catch (e) {
+    alert('Could not update access: ' + e);
+  }
+};
+
+window.revokeDevice = async function(nodeId) {
+  if (!confirm('Revoke this device? It will be refused here and on your other connected devices.')) return;
+  try {
+    await invoke('revoke_device', { nodeId });
+    await updateKnownDevices();
+  } catch (e) {
+    alert('Could not revoke: ' + e);
   }
 };
 
